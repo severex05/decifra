@@ -30,7 +30,7 @@ const BADGES = [
   { id: 'q50', icon: '📚', name: 'Estudioso', desc: '50 questões respondidas', check: p => p.totalQuestions >= 50 },
   { id: 'q100', icon: '💯', name: 'Centenário', desc: '100 questões respondidas', check: p => p.totalQuestions >= 100 },
   { id: 'acc80', icon: '🎖️', name: 'Precisão', desc: '80%+ de acertos (mín. 10 questões)', check: p => p.totalQuestions >= 10 && p.correct / p.totalQuestions >= 0.8 },
-  { id: 'diag', icon: '🔬', name: 'Autoconhecimento', desc: 'Diagnóstico completo', check: () => !!loadLocal('diagnostico_done') },
+  { id: 'diag', icon: '🔬', name: 'Autoconhecimento', desc: 'Diagnóstico completo', check: () => !!state.diagnosticoDone },
   { id: 'xp500', icon: '🌟', name: 'Estrela em Ascensão', desc: '500 XP acumulados', check: (p, xp) => xp >= 500 },
 ]
 
@@ -187,6 +187,7 @@ async function loadUserData() {
     state.plan = data.plan || 'free'
     state.trialEnd = data.trialEnd
     state.xp = data.xp || 0
+    state.diagnosticoDone = data.diagnosticoDone || false
     state.progresso = data.progresso || state.progresso
     if (data.plan) localStorage.setItem('decifra_plan', data.plan)
   } catch {}
@@ -484,8 +485,10 @@ function answerQuestaoHoje(idx, q) {
   }
   if (isCorrect) {
     state.progresso.correct = (state.progresso.correct || 0) + 1
+    state.xp = (state.xp || 0) + 10
     toast('Correto! +10 XP 🎉', 'success')
   } else {
+    state.xp = (state.xp || 0) + 2
     toast('Quase! Veja a explicação abaixo.', '')
   }
   state.progresso.totalQuestions = (state.progresso.totalQuestions || 0) + 1
@@ -840,7 +843,9 @@ async function finishSimulado() {
   })
 
   state.simulado.score = { correct, total: questions.length, bySubject }
-  api('/api/simulado/finish', { type: state.simulado.type, score: state.simulado.score }).catch(() => {})
+  api('/api/simulado/finish', { type: state.simulado.type, score: state.simulado.score })
+    .then(res => { if (res?.xpGain) state.xp = (state.xp || 0) + res.xpGain })
+    .catch(() => {})
   renderTab('simulados')
 }
 
@@ -1186,6 +1191,7 @@ function finishDiagnostico() {
   const strong = Object.entries(bySubject).filter(([, d]) => d.correct / d.total >= 0.5).map(([s]) => s)
   state.diag.result = { bySubject, weak, strong }
   state.diag.screen = 'result'
+  state.diagnosticoDone = true
   saveLocal('diagnostico_done', true)
   api('/api/diagnostico/save', { bySubject, weak, strong }).catch(() => {})
   renderTab('diagnostico')
