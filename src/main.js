@@ -15,6 +15,25 @@ const SUBJECTS = [
   { id: 'ingles',      label: 'Inglês',       color: '#ec4899', emoji: '🌐' },
 ]
 
+const XP_LEVELS = [
+  { name: 'Iniciante', emoji: '🌱', min: 0, max: 99, color: '#6b7280' },
+  { name: 'Estudante', emoji: '📘', min: 100, max: 299, color: '#3b82f6' },
+  { name: 'Veterano', emoji: '🎓', min: 300, max: 699, color: '#8b5cf6' },
+  { name: 'Expert', emoji: '⭐', min: 700, max: 1499, color: '#f59e0b' },
+  { name: 'Mestre', emoji: '🏆', min: 1500, max: Infinity, color: '#ef4444' },
+]
+
+const BADGES = [
+  { id: 'first', icon: '🎯', name: 'Primeiro Passo', desc: '1ª questão respondida', check: p => p.totalQuestions >= 1 },
+  { id: 'streak3', icon: '🔥', name: 'Em Chamas', desc: '3 dias seguidos de estudo', check: p => p.streak >= 3 },
+  { id: 'streak7', icon: '⚡', name: 'Imparável', desc: '7 dias seguidos de estudo', check: p => p.streak >= 7 },
+  { id: 'q50', icon: '📚', name: 'Estudioso', desc: '50 questões respondidas', check: p => p.totalQuestions >= 50 },
+  { id: 'q100', icon: '💯', name: 'Centenário', desc: '100 questões respondidas', check: p => p.totalQuestions >= 100 },
+  { id: 'acc80', icon: '🎖️', name: 'Precisão', desc: '80%+ de acertos (mín. 10 questões)', check: p => p.totalQuestions >= 10 && p.correct / p.totalQuestions >= 0.8 },
+  { id: 'diag', icon: '🔬', name: 'Autoconhecimento', desc: 'Diagnóstico completo', check: () => !!loadLocal('diagnostico_done') },
+  { id: 'xp500', icon: '🌟', name: 'Estrela em Ascensão', desc: '500 XP acumulados', check: (p, xp) => xp >= 500 },
+]
+
 // ===== STATE =====
 const state = {
   user: null,
@@ -24,7 +43,9 @@ const state = {
   tab: 'inicio',
   tutor: { messages: [], subject: 'matematica', loading: false, used: 0, limit: 5 },
   simulado: { screen: 'menu', type: null, questions: [], current: 0, answers: [], timeLeft: 0, timer: null, score: null, loading: false },
-  progresso: { totalQuestions: 0, correct: 0, streak: 0, subjects: {}, history: [] },
+  diag: { screen: 'intro', questions: [], current: 0, answers: [] },
+  progresso: { totalQuestions: 0, correct: 0, streak: 0, subjects: {}, simuladosDone: 0 },
+  plano: null,
   questaoHoje: null,
   questaoRespondida: false,
   onboarding: { done: false, prova: null, step: 0 },
@@ -67,6 +88,10 @@ function toast(msg, type = '') {
 function subjectClass(id) { return `subj-${id}` }
 function subjectColor(id) { return SUBJECTS.find(s => s.id === id)?.color || '#3b82f6' }
 function subjectLabel(id) { return SUBJECTS.find(s => s.id === id)?.label || id }
+
+function getXpLevel(xp) { return [...XP_LEVELS].reverse().find(l => xp >= l.min) || XP_LEVELS[0] }
+function getXpProgress(xp) { const l = getXpLevel(xp); if (l.max === Infinity) return 100; return Math.round(((xp - l.min) / (l.max - l.min)) * 100) }
+function getEarnedBadges(prog, xp) { return BADGES.filter(b => b.check(prog, xp)) }
 
 function planLabel(plan) {
   if (plan === 'trialing') return 'Trial'
@@ -317,11 +342,13 @@ function renderTab(id) {
   if (!content) return
   content.scrollTop = 0
   switch (id) {
-    case 'inicio':    renderInicio(content); break
-    case 'tutor':     renderTutor(content); break
-    case 'simulados': renderSimulados(content); break
-    case 'progresso': renderProgresso(content); break
-    case 'mais':      renderMais(content); break
+    case 'inicio':      renderInicio(content); break
+    case 'tutor':       renderTutor(content); break
+    case 'simulados':   renderSimulados(content); break
+    case 'progresso':   renderProgresso(content); break
+    case 'mais':        renderMais(content); break
+    case 'diagnostico': renderDiagnosticoScreen(content); break
+    case 'plano':       renderPlanoEstudo(content); break
   }
 }
 
@@ -870,57 +897,79 @@ function renderResults(container) {
 // ===== TAB: PROGRESSO =====
 function renderProgresso(container) {
   const p = state.progresso
+  const xp = state.xp || 0
   const pct = p.totalQuestions > 0 ? Math.round((p.correct / p.totalQuestions) * 100) : 0
+  const level = getXpLevel(xp)
+  const lvlPct = getXpProgress(xp)
+  const nextLevel = XP_LEVELS[XP_LEVELS.indexOf(level) + 1]
+  const badges = getEarnedBadges(p, xp)
 
   const subjRows = SUBJECTS.map(s => {
     const data = p.subjects?.[s.id] || { total: 0, correct: 0 }
     const sp = data.total > 0 ? Math.round((data.correct / data.total) * 100) : 0
-    const color = sp >= 70 ? '#10b981' : sp >= 50 ? '#f59e0b' : '#ef4444'
+    const color = data.total === 0 ? 'var(--surface2)' : sp >= 70 ? '#10b981' : sp >= 50 ? '#f59e0b' : '#ef4444'
+    const textColor = data.total === 0 ? 'var(--text3)' : color
     return `
       <div class="subj-perf-item">
         <span class="subj-perf-name">${s.emoji} ${s.label.split(' ')[0]}</span>
         <div class="subj-perf-bar"><div class="subj-perf-fill" style="width:${sp}%;background:${color}"></div></div>
-        <span class="subj-perf-pct" style="color:${color}">${sp}%</span>
+        <span class="subj-perf-pct" style="color:${textColor}">${data.total === 0 ? '—' : sp + '%'}</span>
       </div>
     `
   }).join('')
 
+  const badgesHtml = badges.length > 0
+    ? badges.map(b => `
+        <div class="badge-item">
+          <div class="badge-icon">${b.icon}</div>
+          <div class="badge-info"><div class="badge-name">${b.name}</div><div class="badge-desc">${b.desc}</div></div>
+        </div>
+      `).join('')
+    : `<div style="color:var(--text3);font-size:0.85rem;text-align:center;padding:0.5rem 0">Responda questões e faça o Diagnóstico para ganhar conquistas!</div>`
+
   container.innerHTML = `
     <div class="progresso-screen">
       <div class="panel-title" style="margin-bottom:1rem">Meu Progresso</div>
+
+      <div class="card xp-card">
+        <div class="xp-header">
+          <span class="xp-level-name" style="color:${level.color}">${level.emoji} ${level.name}</span>
+          <span class="xp-total">${xp} XP</span>
+        </div>
+        <div class="xp-bar"><div class="xp-bar-fill" style="width:${lvlPct}%;background:${level.color}"></div></div>
+        <div class="xp-label">${nextLevel ? `${xp - level.min} / ${level.max - level.min} XP para ${nextLevel.emoji} ${nextLevel.name}` : 'Nível máximo! 🏆'}</div>
+      </div>
+
       <div class="progresso-overview">
         <div class="prog-card">
           <div class="prog-card-value text-primary">${p.totalQuestions || 0}</div>
-          <div class="prog-card-label">Questões respondidas</div>
+          <div class="prog-card-label">Questões</div>
         </div>
         <div class="prog-card">
           <div class="prog-card-value text-success">${pct}%</div>
-          <div class="prog-card-label">Taxa de acertos</div>
+          <div class="prog-card-label">Acertos</div>
         </div>
         <div class="prog-card">
           <div class="prog-card-value text-accent">🔥${p.streak || 0}</div>
           <div class="prog-card-label">Dias seguidos</div>
         </div>
         <div class="prog-card">
-          <div class="prog-card-value" style="color:var(--purple)">${state.xp || 0}</div>
-          <div class="prog-card-label">XP total</div>
+          <div class="prog-card-value" style="color:var(--purple)">${p.simuladosDone || 0}</div>
+          <div class="prog-card-label">Simulados</div>
         </div>
       </div>
+
       <div class="card">
-        <div class="card-title">Desempenho por matéria</div>
+        <div class="card-title">Conquistas ${badges.length}/${BADGES.length}</div>
+        <div class="badges-grid">${badgesHtml}</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Por matéria</div>
         <div class="subj-performance">${subjRows}</div>
       </div>
-      ${!isPro() ? `
-      <div class="card" style="background:var(--primary-glow);border-color:rgba(59,130,246,0.3);text-align:center;">
-        <div style="font-size:1.5rem;margin-bottom:0.5rem">📊</div>
-        <div style="font-weight:700;margin-bottom:0.25rem">Análise detalhada no Pro</div>
-        <div style="color:var(--text2);font-size:0.8rem;margin-bottom:1rem">Gráficos de evolução, relatórios semanais e probabilidade de aprovação</div>
-        <button class="btn btn-primary btn-sm" id="progUpgrade">Testar grátis por 7 dias</button>
-      </div>` : ''}
     </div>
   `
-
-  document.getElementById('progUpgrade')?.addEventListener('click', () => renderUpgradeModal())
 }
 
 // ===== TAB: MAIS =====
@@ -945,15 +994,23 @@ function renderMais(container) {
         ⭐ Ativar Pro — 7 dias grátis
       </button>` : ''}
 
-      <div class="mais-section-title">Funcionalidades</div>
+      <div class="mais-section-title">Ferramentas de estudo</div>
       <div class="mais-grid">
+        <div class="mais-item" data-action="diagnostico">
+          <div class="mais-icon">🔬</div>
+          <div class="mais-info">
+            <div class="mais-label">Diagnóstico</div>
+            <div class="mais-sub">Descubra seus pontos fortes e fracos</div>
+          </div>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
         <div class="mais-item" data-action="plano">
           <div class="mais-icon">📋</div>
           <div class="mais-info">
-            <div class="mais-label">Meu Plano de Estudo</div>
-            <div class="mais-sub">Cronograma personalizado por semana</div>
+            <div class="mais-label">Plano de Estudo</div>
+            <div class="mais-sub">Cronograma semanal gerado por IA</div>
           </div>
-          ${isPro() ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>' : '<span class="mais-badge-soon">Em breve</span>'}
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
         </div>
         <div class="mais-item" data-action="redacao">
           <div class="mais-icon">✍️</div>
@@ -968,14 +1025,6 @@ function renderMais(container) {
           <div class="mais-info">
             <div class="mais-label">Flashcards</div>
             <div class="mais-sub">Revisão espaçada por matéria</div>
-          </div>
-          <span class="mais-badge-soon">Em breve</span>
-        </div>
-        <div class="mais-item" data-action="simulado-ao-vivo">
-          <div class="mais-icon">🏆</div>
-          <div class="mais-info">
-            <div class="mais-label">Simulado ao Vivo</div>
-            <div class="mais-sub">Todo domingo — compete com outros alunos</div>
           </div>
           <span class="mais-badge-soon">Em breve</span>
         </div>
@@ -1006,12 +1055,272 @@ function renderMais(container) {
       const a = item.dataset.action
       if (a === 'logout') logout()
       else if (a === 'planos') renderUpgradeModal()
-      else if (a === 'plano' && isPro()) toast('Plano de estudo chegando em breve!', '')
-      else if (a === 'redacao' || a === 'flashcards' || a === 'simulado-ao-vivo' || a === 'plano') toast('Funcionalidade chegando em breve!', '')
+      else if (a === 'diagnostico') switchTab('diagnostico')
+      else if (a === 'plano') switchTab('plano')
+      else if (a === 'redacao' || a === 'flashcards') toast('Funcionalidade chegando em breve!', '')
     }
   })
 
   document.getElementById('maisUpgrade')?.addEventListener('click', () => renderUpgradeModal())
+}
+
+// ===== DIAGNÓSTICO =====
+function renderDiagnosticoScreen(container) {
+  const { screen } = state.diag
+
+  if (screen === 'loading') {
+    container.innerHTML = `<div class="loading-screen"><div class="loading-logo">Decifra<span>.</span></div><div class="spinner"></div><p style="color:var(--text2);font-size:0.875rem">Carregando diagnóstico...</p></div>`
+    return
+  }
+  if (screen === 'quiz') { renderDiagQuiz(container); return }
+  if (screen === 'result') { renderDiagResult(container); return }
+
+  // intro
+  const done = loadLocal('diagnostico_done')
+  container.innerHTML = `
+    <div class="diag-screen">
+      <div class="diag-intro">
+        <div class="diag-intro-icon">🔬</div>
+        <h2 class="diag-title">Diagnóstico</h2>
+        <p class="diag-sub">Responda questões de cada matéria e descubra seus pontos fortes e fracos.</p>
+        <div class="diag-bullets">
+          <div class="diag-bullet">✓ 7 questões — 1 por matéria</div>
+          <div class="diag-bullet">✓ Sem limite de tempo</div>
+          <div class="diag-bullet">✓ Relatório personalizado</div>
+        </div>
+      </div>
+      ${done ? `<div class="card" style="margin-bottom:1rem;text-align:center"><div style="font-size:0.8rem;color:var(--text2)">Diagnóstico anterior</div><div style="font-size:0.9rem;font-weight:600;margin-top:0.25rem;color:var(--success)">Concluído ✅</div></div>` : ''}
+      <button class="btn btn-primary btn-full" id="diagStart">${done ? 'Refazer Diagnóstico' : 'Iniciar Diagnóstico'}</button>
+      <button class="btn btn-ghost btn-full" id="diagBack" style="margin-top:0.5rem">Voltar</button>
+    </div>
+  `
+  document.getElementById('diagStart').onclick = () => startDiagnostico()
+  document.getElementById('diagBack').onclick = () => switchTab('mais')
+}
+
+async function startDiagnostico() {
+  state.diag.screen = 'loading'
+  state.diag.questions = []
+  state.diag.current = 0
+  state.diag.answers = []
+  renderTab('diagnostico')
+  try {
+    const data = await api('/api/simulado/start', { type: 'diagnostico' })
+    state.diag.questions = data.questions
+    state.diag.screen = 'quiz'
+    renderTab('diagnostico')
+  } catch {
+    toast('Erro ao carregar diagnóstico. Tente novamente.', 'error')
+    state.diag.screen = 'intro'
+    renderTab('diagnostico')
+  }
+}
+
+function renderDiagQuiz(container) {
+  const { questions, current, answers } = state.diag
+  const q = questions[current]
+  const answered = answers[current] !== undefined
+  const total = questions.length
+  const progress = Math.round((current / total) * 100)
+
+  const opts = q.options.map((opt, i) => {
+    let cls = 'questao-option'
+    if (answered) {
+      if (i === q.answerIndex) cls += ' correct'
+      else if (i === answers[current] && i !== q.answerIndex) cls += ' wrong'
+    }
+    return `<button class="${cls}" data-idx="${i}" ${answered ? 'disabled' : ''}><span class="option-letter">${String.fromCharCode(65 + i)}</span>${opt}</button>`
+  }).join('')
+
+  container.innerHTML = `
+    <div class="quiz-screen" style="height:100%">
+      <div class="quiz-header">
+        <button class="btn btn-ghost btn-sm" id="diagExit" style="padding:0.4rem">✕</button>
+        <div class="quiz-progress-bar"><div class="quiz-progress-fill" style="width:${progress}%"></div></div>
+        <span class="quiz-counter">${current + 1}/${total}</span>
+        <span class="subject-chip ${subjectClass(q.subject)}" style="font-size:0.65rem;white-space:nowrap">${subjectLabel(q.subject)}</span>
+      </div>
+      <div class="quiz-body">
+        <div class="quiz-enunciado">${q.question}</div>
+        <div class="quiz-options">${opts}</div>
+        ${answered ? `<div class="quiz-explanation"><strong>${answers[current] === q.answerIndex ? '✅ Correto!' : '❌ Errado'}</strong>${q.explanation}</div>` : ''}
+      </div>
+      <div class="quiz-footer">
+        ${answered
+          ? current < total - 1
+            ? `<button class="btn btn-primary btn-full" id="diagNext">Próxima →</button>`
+            : `<button class="btn btn-primary btn-full" id="diagFinish">Ver resultado</button>`
+          : '<div></div>'}
+      </div>
+    </div>
+  `
+
+  if (!answered) {
+    container.querySelectorAll('[data-idx]').forEach(btn => {
+      btn.onclick = () => { state.diag.answers[current] = parseInt(btn.dataset.idx); renderTab('diagnostico') }
+    })
+  }
+  document.getElementById('diagExit')?.onclick = () => { state.diag.screen = 'intro'; renderTab('diagnostico') }
+  document.getElementById('diagNext')?.onclick = () => { state.diag.current++; renderTab('diagnostico') }
+  document.getElementById('diagFinish')?.onclick = () => finishDiagnostico()
+}
+
+function finishDiagnostico() {
+  const { questions, answers } = state.diag
+  const bySubject = {}
+  questions.forEach((q, i) => {
+    const correct = answers[i] === q.answerIndex
+    if (!bySubject[q.subject]) bySubject[q.subject] = { total: 0, correct: 0 }
+    bySubject[q.subject].total++
+    if (correct) bySubject[q.subject].correct++
+    if (!state.progresso.subjects[q.subject]) state.progresso.subjects[q.subject] = { total: 0, correct: 0 }
+    state.progresso.subjects[q.subject].total++
+    if (correct) state.progresso.subjects[q.subject].correct++
+    state.progresso.totalQuestions++
+    if (correct) state.progresso.correct++
+    api('/api/user/resposta', { questaoId: q.id, correct, subject: q.subject }).catch(() => {})
+  })
+  saveLocal('progresso', state.progresso)
+
+  const weak = Object.entries(bySubject).filter(([, d]) => d.correct / d.total < 0.5).map(([s]) => s)
+  const strong = Object.entries(bySubject).filter(([, d]) => d.correct / d.total >= 0.5).map(([s]) => s)
+  state.diag.result = { bySubject, weak, strong }
+  state.diag.screen = 'result'
+  saveLocal('diagnostico_done', true)
+  api('/api/diagnostico/save', { bySubject, weak, strong }).catch(() => {})
+  renderTab('diagnostico')
+  toast('Diagnóstico concluído! 🔬', 'success')
+}
+
+function renderDiagResult(container) {
+  const { bySubject, weak, strong } = state.diag.result
+  const total = Object.values(bySubject).reduce((a, d) => a + d.total, 0)
+  const correct = Object.values(bySubject).reduce((a, d) => a + d.correct, 0)
+  const pct = Math.round((correct / total) * 100)
+  const scoreColor = pct >= 70 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444'
+
+  const subjRows = Object.entries(bySubject).map(([s, d]) => {
+    const sp = Math.round((d.correct / d.total) * 100)
+    const icon = sp === 100 ? '✅' : sp === 0 ? '❌' : '🔸'
+    return `
+      <div class="diag-subj-row">
+        <span>${icon}</span>
+        <span class="diag-subj-name">${subjectLabel(s)}</span>
+        <span style="font-weight:700;color:${sp >= 50 ? '#10b981' : '#ef4444'}">${sp}%</span>
+      </div>
+    `
+  }).join('')
+
+  const recommendation = weak.length > 0
+    ? `Priorize ${weak.map(s => subjectLabel(s)).join(', ')} no seu plano de estudo.`
+    : 'Excelente! Você está bem em todas as matérias. Continue praticando!'
+
+  container.innerHTML = `
+    <div class="diag-screen">
+      <div class="diag-result-header">
+        <div class="diag-result-score" style="color:${scoreColor}">${pct}%</div>
+        <div class="diag-result-label">${correct} de ${total} questões corretas</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Resultado por matéria</div>
+        ${subjRows}
+      </div>
+      <div class="card" style="background:var(--primary-glow);border-color:rgba(59,130,246,0.3)">
+        <div class="card-title">📋 Recomendação</div>
+        <div style="font-size:0.875rem;line-height:1.6">${recommendation}</div>
+      </div>
+      <button class="btn btn-primary btn-full" id="diagToPlano">Gerar Plano de Estudo →</button>
+      <button class="btn btn-ghost btn-full" id="diagToMais" style="margin-top:0.5rem">Voltar ao menu</button>
+    </div>
+  `
+  document.getElementById('diagToPlano').onclick = () => switchTab('plano')
+  document.getElementById('diagToMais').onclick = () => { state.diag.screen = 'intro'; switchTab('mais') }
+}
+
+// ===== PLANO DE ESTUDO =====
+async function renderPlanoEstudo(container) {
+  container.innerHTML = `<div class="loading-screen"><div class="spinner"></div></div>`
+  if (!state.plano) {
+    try { const data = await api('/api/plano-estudo'); state.plano = data.plan } catch {}
+  }
+  if (!state.plano) renderPlanoGerar(container)
+  else renderPlanoSemana(container)
+}
+
+function renderPlanoGerar(container) {
+  container.innerHTML = `
+    <div class="plano-screen">
+      <div class="plano-header">
+        <div class="plano-icon">📋</div>
+        <h2 class="plano-title">Plano de Estudo</h2>
+        <p class="plano-sub">Cronograma semanal gerado por IA com base no seu perfil e desempenho.</p>
+        <div class="diag-bullets">
+          <div class="diag-bullet">✓ Personalizado para sua prova</div>
+          <div class="diag-bullet">✓ Foco nas suas matérias fracas</div>
+          <div class="diag-bullet">✓ Regenere quando quiser</div>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-full" id="gerarPlanoBtn">✨ Gerar meu plano</button>
+      <button class="btn btn-ghost btn-full" id="planoBack" style="margin-top:0.5rem">Voltar</button>
+    </div>
+  `
+  document.getElementById('gerarPlanoBtn').onclick = () => gerarPlano(container)
+  document.getElementById('planoBack').onclick = () => switchTab('mais')
+}
+
+async function gerarPlano(container) {
+  const btn = document.getElementById('gerarPlanoBtn')
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Gerando com IA...' }
+  try {
+    const data = await api('/api/plano-estudo/generate', {})
+    state.plano = data.plan
+    renderPlanoSemana(container)
+    toast('Plano gerado! 🎉', 'success')
+  } catch (err) {
+    toast(err.message || 'Erro ao gerar plano.', 'error')
+    if (btn) { btn.disabled = false; btn.textContent = '✨ Gerar meu plano' }
+  }
+}
+
+function renderPlanoSemana(container) {
+  const plan = state.plano
+  if (!plan) { renderPlanoGerar(container); return }
+
+  const SUBJ_EMOJI = { matematica: '📐', portugues: '📖', biologia: '🧬', quimica: '⚗️', fisica: '⚡', historia: '🏛️', geografia: '🌍', filosofia: '🤔', ingles: '🌐' }
+  const geradoEm = plan.gerado_em ? new Date(plan.gerado_em).toLocaleDateString('pt-BR') : ''
+
+  const diasHtml = (plan.dias || []).map(d => `
+    <div class="plano-day">
+      <div class="plano-day-name">${d.dia}</div>
+      <div class="plano-day-materias">
+        ${(d.materias || []).map(m => `
+          <div class="plano-materia-item ${subjectClass(m.materia)}">
+            ${SUBJ_EMOJI[m.materia] || '📚'} <strong>${subjectLabel(m.materia)}</strong> — ${m.topico} · ${m.minutos}min
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `).join('')
+
+  container.innerHTML = `
+    <div class="plano-screen">
+      <div class="plano-semana-header">
+        <div>
+          <div class="panel-title">📋 Plano de Estudo</div>
+          <div class="panel-sub">${plan.semana || ''}</div>
+        </div>
+        <button class="btn btn-outline btn-sm" id="regenerarBtn">Regenerar</button>
+      </div>
+      ${plan.meta ? `<div class="card plano-meta">"${plan.meta}"</div>` : ''}
+      <div class="plano-dias">${diasHtml}</div>
+      ${geradoEm ? `<div style="text-align:center;color:var(--text3);font-size:0.75rem;margin-top:0.5rem;margin-bottom:1rem">Gerado em ${geradoEm}</div>` : ''}
+    </div>
+  `
+  document.getElementById('regenerarBtn').onclick = () => {
+    state.plano = null
+    renderPlanoGerar(container)
+    gerarPlano(container)
+  }
 }
 
 // ===== UPGRADE MODAL =====

@@ -989,3 +989,49 @@ body {
 .hidden { display: none !important; }
 .divider { height: 1px; background: var(--border); margin: 1rem 0; }
 .spacer { height: 0.5rem; }
+
+/* ===== XP LEVEL CARD ===== */
+.xp-card { margin-bottom: 1.25rem; }
+.xp-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.625rem; }
+.xp-level-name { font-weight: 700; font-size: 0.95rem; }
+.xp-total { font-weight: 800; font-size: 1rem; }
+.xp-bar { height: 8px; background: var(--surface2); border-radius: 4px; overflow: hidden; margin-bottom: 0.375rem; }
+.xp-bar-fill { height: 100%; border-radius: 4px; transition: width .6s ease; }
+.xp-label { font-size: 0.72rem; color: var(--text3); }
+
+/* ===== BADGES ===== */
+.badges-grid { display: flex; flex-direction: column; }
+.badge-item { display: flex; align-items: center; gap: 0.875rem; padding: 0.625rem 0; border-bottom: 1px solid var(--border); }
+.badge-item:last-child { border-bottom: none; }
+.badge-icon { font-size: 1.5rem; width: 36px; text-align: center; flex-shrink: 0; }
+.badge-name { font-size: 0.875rem; font-weight: 700; }
+.badge-desc { font-size: 0.72rem; color: var(--text3); margin-top: 0.1rem; }
+
+/* ===== DIAGNÓSTICO ===== */
+.diag-screen { padding: 1rem; }
+.diag-intro { text-align: center; padding: 1.5rem 0 1rem; }
+.diag-intro-icon { font-size: 3rem; margin-bottom: 0.75rem; }
+.diag-title { font-size: 1.4rem; font-weight: 800; margin-bottom: 0.5rem; }
+.diag-sub { color: var(--text2); font-size: 0.875rem; line-height: 1.6; margin-bottom: 1.25rem; }
+.diag-bullets { display: flex; flex-direction: column; gap: 0.375rem; margin-bottom: 1.5rem; }
+.diag-bullet { font-size: 0.85rem; color: var(--success); font-weight: 500; text-align: center; }
+.diag-result-header { text-align: center; padding: 1.5rem 0 1rem; }
+.diag-result-score { font-size: 4rem; font-weight: 900; letter-spacing: -2px; line-height: 1; }
+.diag-result-label { color: var(--text2); font-size: 0.875rem; margin-top: 0.375rem; margin-bottom: 0.75rem; }
+.diag-subj-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.625rem 0; border-bottom: 1px solid var(--border); font-size: 0.875rem; }
+.diag-subj-row:last-child { border-bottom: none; }
+.diag-subj-name { flex: 1; }
+
+/* ===== PLANO DE ESTUDO ===== */
+.plano-screen { padding: 1rem; }
+.plano-header { text-align: center; padding: 1.5rem 0 1rem; }
+.plano-icon { font-size: 3rem; margin-bottom: 0.75rem; }
+.plano-title { font-size: 1.4rem; font-weight: 800; margin-bottom: 0.5rem; }
+.plano-sub { color: var(--text2); font-size: 0.875rem; line-height: 1.6; margin-bottom: 1.25rem; }
+.plano-semana-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem; }
+.plano-meta { font-style: italic; color: var(--text2); text-align: center; font-size: 0.875rem; margin-bottom: 1rem; }
+.plano-dias { display: flex; flex-direction: column; gap: 0.875rem; margin-bottom: 1rem; }
+.plano-day { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+.plano-day-name { font-weight: 700; font-size: 0.875rem; padding: 0.625rem 1rem; background: var(--surface2); border-bottom: 1px solid var(--border); }
+.plano-day-materias { padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.plano-materia-item { border-radius: 8px; padding: 0.5rem 0.75rem; font-size: 0.8rem; line-height: 1.5; }
