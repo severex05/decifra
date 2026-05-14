@@ -1048,4 +1048,89 @@ body {
 .plano-day { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
 .plano-day-name { font-weight: 700; font-size: 0.875rem; padding: 0.625rem 1rem; background: var(--surface2); border-bottom: 1px solid var(--border); }
 .plano-day-materias { padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
-.plano-materia-item { border-radius: 8px; padding: 0.5rem 0.75rem; font-size: 0.8rem; line-height: 1.5; }
+.plano-materia-item { border-radius: 8px; padding: 0.5rem 0.75rem; font-size: 0.8rem; line-height: 1.5; display: flex; align-items: flex-start; gap: 0.5rem; }
+
+/* ===== BADGE UNLOCK ===== */
+.badge-unlock-overlay {
+  position: fixed; inset: 0; z-index: 400;
+  background: rgba(0,0,0,0.85);
+  backdrop-filter: blur(8px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 1.5rem;
+  animation: fadeIn .2s ease;
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.badge-unlock-card {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-xl);
+  padding: 2.5rem 2rem;
+  text-align: center;
+  max-width: 300px;
+  width: 100%;
+  animation: fadeInScale .3s ease;
+}
+.badge-unlock-icon { font-size: 4rem; margin-bottom: 0.875rem; }
+.badge-unlock-title {
+  font-size: 0.7rem; color: var(--accent); font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.75px; margin-bottom: 0.625rem;
+}
+.badge-unlock-name { font-size: 1.3rem; font-weight: 800; margin-bottom: 0.375rem; }
+.badge-unlock-desc { font-size: 0.8rem; color: var(--text2); line-height: 1.5; }
+
+/* ===== MISSION CARD ===== */
+.mission-card {
+  margin: 0 1rem 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 0.875rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+}
+.mission-card.mission-done { border-color: rgba(16,185,129,0.35); background: rgba(16,185,129,0.04); }
+.mission-icon { font-size: 1.5rem; flex-shrink: 0; }
+.mission-info { flex: 1; min-width: 0; }
+.mission-title { font-size: 0.7rem; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; }
+.mission-desc { font-size: 0.85rem; font-weight: 600; margin-top: 0.125rem; }
+.mission-right { flex-shrink: 0; text-align: right; }
+.mission-count { font-size: 0.75rem; font-weight: 700; color: var(--text2); margin-bottom: 0.375rem; }
+.mission-bar { width: 72px; height: 5px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
+.mission-bar-fill { height: 100%; background: var(--primary); border-radius: 3px; transition: width .4s ease; }
+.mission-bar-fill.done { background: var(--success); }
+
+/* ===== ACTIVITY STRIP ===== */
+.activity-strip { display: flex; gap: 0.25rem; justify-content: space-between; align-items: flex-end; }
+.activity-day { display: flex; flex-direction: column; align-items: center; gap: 0.375rem; flex: 1; }
+.activity-dot {
+  width: 100%; max-width: 36px; height: 36px;
+  border-radius: 8px;
+  background: var(--surface2);
+  border: 1.5px solid var(--border);
+  transition: all .2s;
+}
+.activity-day.active .activity-dot { background: var(--primary); border-color: var(--primary); }
+.activity-day.today:not(.active) .activity-dot { border-color: var(--text3); border-style: dashed; }
+.activity-label { font-size: 0.6rem; color: var(--text3); font-weight: 500; text-transform: capitalize; }
+.activity-day.active .activity-label { color: var(--primary-light); }
+
+/* ===== PLANO CHECKBOXES ===== */
+.plano-materia-text { flex: 1; }
+.plano-materia-item.checked { opacity: 0.5; }
+.plano-materia-item.checked .plano-materia-text { text-decoration: line-through; }
+.plano-check-btn {
+  width: 18px; height: 18px; min-width: 18px;
+  border-radius: 4px;
+  border: 1.5px solid rgba(255,255,255,0.35);
+  background: transparent;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  margin-top: 1px;
+  transition: all .15s;
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: #fff;
+  font-family: inherit;
+}
+.plano-check-btn.checked { background: rgba(255,255,255,0.35); }

@@ -103,6 +103,76 @@ function isPro() {
   return state.plan === 'active' || state.plan === 'trialing'
 }
 
+// ===== GAMIFICATION & PROGRESS HELPERS =====
+const MISSION_GOAL = 5
+
+function getDailyProgress() {
+  const today = new Date().toDateString()
+  return parseInt(localStorage.getItem(`decifra_daily_${today}`) || '0')
+}
+
+function incrementDailyProgress() {
+  const today = new Date().toDateString()
+  const key = `decifra_daily_${today}`
+  const curr = parseInt(localStorage.getItem(key) || '0')
+  const next = curr + 1
+  localStorage.setItem(key, next)
+  return next
+}
+
+function recordStudyToday() {
+  const today = new Date().toISOString().slice(0, 10)
+  const log = JSON.parse(localStorage.getItem('decifra_study_log') || '[]')
+  if (!log.includes(today)) {
+    log.push(today)
+    if (log.length > 30) log.splice(0, log.length - 30)
+    localStorage.setItem('decifra_study_log', JSON.stringify(log))
+  }
+}
+
+function getActivityStrip() {
+  const log = JSON.parse(localStorage.getItem('decifra_study_log') || '[]')
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const days = []
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date()
+    d.setDate(d.getDate() - i)
+    const dateStr = d.toISOString().slice(0, 10)
+    const dayName = d.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')
+    days.push({ date: dateStr, label: dayName, studied: log.includes(dateStr), isToday: dateStr === todayStr })
+  }
+  return days
+}
+
+function checkAndShowNewBadges() {
+  const currentBadges = getEarnedBadges(state.progresso, state.xp)
+  const storedIds = JSON.parse(localStorage.getItem('decifra_earned_badges') || '[]')
+  const newBadges = currentBadges.filter(b => !storedIds.includes(b.id))
+  if (newBadges.length > 0) {
+    localStorage.setItem('decifra_earned_badges', JSON.stringify(currentBadges.map(b => b.id)))
+    showBadgeUnlockModal(newBadges[0])
+  }
+}
+
+function showBadgeUnlockModal(badge) {
+  const existing = document.querySelector('.badge-unlock-overlay')
+  if (existing) existing.remove()
+  const overlay = el('div', 'badge-unlock-overlay')
+  overlay.innerHTML = `
+    <div class="badge-unlock-card">
+      <div class="badge-unlock-icon">${badge.icon}</div>
+      <div class="badge-unlock-title">Conquista desbloqueada!</div>
+      <div class="badge-unlock-name">${badge.name}</div>
+      <div class="badge-unlock-desc">${badge.desc}</div>
+      <button class="btn btn-primary" id="badgeOk" style="margin-top:1.5rem;width:100%">Incrível! 🎉</button>
+    </div>
+  `
+  document.body.appendChild(overlay)
+  document.getElementById('badgeOk').onclick = () => overlay.remove()
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove() }
+  setTimeout(() => { if (overlay.parentNode) overlay.remove() }, 8000)
+}
+
 // ===== AUTH =====
 function renderAuth(mode = 'login') {
   const app = document.getElementById('app')
@@ -361,6 +431,9 @@ async function renderInicio(container) {
   const hora = new Date().getHours()
   const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite'
   const nome = user?.name?.split(' ')[0] || 'Aluno'
+  const dailyDone = getDailyProgress()
+  const missionDone = dailyDone >= MISSION_GOAL
+  const missionPct = Math.min(100, Math.round((dailyDone / MISSION_GOAL) * 100))
 
   container.innerHTML = `
     <div class="inicio-greeting">
@@ -379,6 +452,17 @@ async function renderInicio(container) {
       <div class="stat-card">
         <div class="stat-value text-success">${prog.totalQuestions ? Math.round((prog.correct / prog.totalQuestions) * 100) : 0}%</div>
         <div class="stat-label">Acertos</div>
+      </div>
+    </div>
+    <div class="mission-card ${missionDone ? 'mission-done' : ''}">
+      <div class="mission-icon">${missionDone ? '✅' : '⚡'}</div>
+      <div class="mission-info">
+        <div class="mission-title">Missão do dia</div>
+        <div class="mission-desc">${missionDone ? 'Missão concluída! 🎉' : `Responda ${MISSION_GOAL} questões hoje`}</div>
+      </div>
+      <div class="mission-right">
+        <div class="mission-count" id="missionCount">${Math.min(dailyDone, MISSION_GOAL)}/${MISSION_GOAL}</div>
+        <div class="mission-bar"><div class="mission-bar-fill ${missionDone ? 'done' : ''}" id="missionFill" style="width:${missionPct}%"></div></div>
       </div>
     </div>
     <div id="questaoHojeContainer"></div>
@@ -494,6 +578,17 @@ function answerQuestaoHoje(idx, q) {
   }
   state.progresso.totalQuestions = (state.progresso.totalQuestions || 0) + 1
   saveLocal('progresso', state.progresso)
+  const dailyCount = incrementDailyProgress()
+  recordStudyToday()
+  checkAndShowNewBadges()
+  const mFill = document.getElementById('missionFill')
+  const mCount = document.getElementById('missionCount')
+  if (mFill) {
+    const pct = Math.min(100, Math.round((dailyCount / MISSION_GOAL) * 100))
+    mFill.style.width = `${pct}%`
+    if (dailyCount >= MISSION_GOAL) mFill.classList.add('done')
+  }
+  if (mCount) mCount.textContent = `${Math.min(dailyCount, MISSION_GOAL)}/${MISSION_GOAL}`
   api('/api/user/resposta', { questaoId: q.id, correct: isCorrect, subject: q.subject }).catch(() => {})
 }
 
@@ -864,6 +959,8 @@ function answerQuiz(idx) {
   if (isCorrect) state.progresso.subjects[subj].correct++
 
   saveLocal('progresso', state.progresso)
+  incrementDailyProgress()
+  recordStudyToday()
   renderTab('simulados')
 }
 
@@ -883,8 +980,12 @@ async function finishSimulado() {
   })
 
   state.simulado.score = { correct, total: questions.length, bySubject }
+  recordStudyToday()
   api('/api/simulado/finish', { type: state.simulado.type, score: state.simulado.score })
-    .then(res => { if (res?.xpGain) state.xp = (state.xp || 0) + res.xpGain })
+    .then(res => {
+      if (res?.xpGain) state.xp = (state.xp || 0) + res.xpGain
+      checkAndShowNewBadges()
+    })
     .catch(() => {})
   renderTab('simulados')
 }
@@ -972,6 +1073,14 @@ function renderProgresso(container) {
       `).join('')
     : `<div style="color:var(--text3);font-size:0.85rem;text-align:center;padding:0.5rem 0">Responda questões e faça o Diagnóstico para ganhar conquistas!</div>`
 
+  const activityDays = getActivityStrip()
+  const activityHtml = activityDays.map(d => `
+    <div class="activity-day ${d.studied ? 'active' : ''} ${d.isToday ? 'today' : ''}">
+      <div class="activity-dot"></div>
+      <div class="activity-label">${d.label}</div>
+    </div>
+  `).join('')
+
   container.innerHTML = `
     <div class="progresso-screen">
       <div class="panel-title" style="margin-bottom:1rem">Meu Progresso</div>
@@ -983,6 +1092,11 @@ function renderProgresso(container) {
         </div>
         <div class="xp-bar"><div class="xp-bar-fill" style="width:${lvlPct}%;background:${level.color}"></div></div>
         <div class="xp-label">${nextLevel ? `${xp - level.min} / ${level.max - level.min} XP para ${nextLevel.emoji} ${nextLevel.name}` : 'Nível máximo! 🏆'}</div>
+      </div>
+
+      <div class="card" style="margin-bottom:1.25rem">
+        <div class="card-title">Atividade — últimos 7 dias</div>
+        <div class="activity-strip">${activityHtml}</div>
       </div>
 
       <div class="progresso-overview">
@@ -1237,6 +1351,8 @@ function finishDiagnostico() {
   api('/api/diagnostico/save', { bySubject, weak, strong }).catch(() => {})
   renderTab('diagnostico')
   toast('Diagnóstico concluído! 🔬', 'success')
+  recordStudyToday()
+  checkAndShowNewBadges()
 }
 
 function renderDiagResult(container) {
@@ -1336,15 +1452,21 @@ function renderPlanoSemana(container) {
   const SUBJ_EMOJI = { matematica: '📐', portugues: '📖', biologia: '🧬', quimica: '⚗️', fisica: '⚡', historia: '🏛️', geografia: '🌍', filosofia: '🤔', ingles: '🌐' }
   const geradoEm = plan.gerado_em ? new Date(plan.gerado_em).toLocaleDateString('pt-BR') : ''
 
+  const planoChecks = JSON.parse(localStorage.getItem('decifra_plano_checks') || '{}')
   const diasHtml = (plan.dias || []).map(d => `
     <div class="plano-day">
       <div class="plano-day-name">${d.dia}</div>
       <div class="plano-day-materias">
-        ${(d.materias || []).map(m => `
-          <div class="plano-materia-item ${subjectClass(m.materia)}">
-            ${SUBJ_EMOJI[m.materia] || '📚'} <strong>${subjectLabel(m.materia)}</strong> — ${m.topico} · ${m.minutos}min
-          </div>
-        `).join('')}
+        ${(d.materias || []).map((m, i) => {
+          const key = `${d.dia}_${m.materia}_${i}`
+          const done = !!planoChecks[key]
+          return `
+            <div class="plano-materia-item ${subjectClass(m.materia)} ${done ? 'checked' : ''}">
+              <button class="plano-check-btn ${done ? 'checked' : ''}" data-key="${key}">${done ? '✓' : ''}</button>
+              <span class="plano-materia-text">${SUBJ_EMOJI[m.materia] || '📚'} <strong>${subjectLabel(m.materia)}</strong> — ${m.topico} · ${m.minutos}min</span>
+            </div>
+          `
+        }).join('')}
       </div>
     </div>
   `).join('')
@@ -1368,6 +1490,20 @@ function renderPlanoSemana(container) {
     renderPlanoGerar(container)
     gerarPlano(container)
   }
+
+  container.querySelectorAll('.plano-check-btn').forEach(btn => {
+    btn.onclick = e => {
+      e.stopPropagation()
+      const key = btn.dataset.key
+      const checks = JSON.parse(localStorage.getItem('decifra_plano_checks') || '{}')
+      checks[key] = !checks[key]
+      localStorage.setItem('decifra_plano_checks', JSON.stringify(checks))
+      const done = checks[key]
+      btn.classList.toggle('checked', done)
+      btn.textContent = done ? '✓' : ''
+      btn.closest('.plano-materia-item').classList.toggle('checked', done)
+    }
+  })
 }
 
 // ===== CORREÇÃO DE REDAÇÃO =====
