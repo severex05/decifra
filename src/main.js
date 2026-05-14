@@ -1095,7 +1095,7 @@ function renderDiagnosticoScreen(container) {
         <h2 class="diag-title">Diagnóstico</h2>
         <p class="diag-sub">Responda questões de cada matéria e descubra seus pontos fortes e fracos.</p>
         <div class="diag-bullets">
-          <div class="diag-bullet">✓ 7 questões — 1 por matéria</div>
+          <div class="diag-bullet">✓ 9 questões — 1 por matéria</div>
           <div class="diag-bullet">✓ Sem limite de tempo</div>
           <div class="diag-bullet">✓ Relatório personalizado</div>
         </div>
