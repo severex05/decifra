@@ -571,6 +571,20 @@ body {
 }
 .send-btn:hover { opacity: 0.9; }
 .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.practice-btn {
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text2);
+  transition: background .15s, color .15s;
+}
+.practice-btn:hover { background: var(--primary-glow); color: var(--primary); border-color: rgba(59,130,246,0.4); }
 .free-limit-banner {
   margin: 0 1rem 0.5rem;
   padding: 0.625rem 0.875rem;

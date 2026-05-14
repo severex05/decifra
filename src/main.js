@@ -350,6 +350,7 @@ function renderTab(id) {
     case 'mais':        renderMais(content); break
     case 'diagnostico': renderDiagnosticoScreen(content); break
     case 'plano':       renderPlanoEstudo(content); break
+    case 'redacao':     renderRedacao(content); break
   }
 }
 
@@ -517,6 +518,9 @@ function renderTutor(container) {
       ${limitBar}
       <div class="tutor-messages" id="tutorMessages"></div>
       <div class="tutor-input-area">
+        <button class="practice-btn" id="tutorPractice" title="Gerar questão de prática">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+        </button>
         <textarea class="tutor-textarea" id="tutorInput" placeholder="Digite sua dúvida..." rows="1"></textarea>
         <button class="send-btn" id="tutorSend">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
@@ -561,6 +565,36 @@ function renderTutor(container) {
   if (document.getElementById('tutorUpgrade')) {
     document.getElementById('tutorUpgrade').onclick = () => renderUpgradeModal()
   }
+
+  document.getElementById('tutorPractice').onclick = () => generatePracticeQuestion(container)
+}
+
+async function generatePracticeQuestion(container) {
+  const subj = state.tutor.subject
+  const subjLabel = SUBJECTS.find(s => s.id === subj)?.label || subj
+
+  if (!state.tutor.chatsBySubject[subj]) state.tutor.chatsBySubject[subj] = []
+  const subjMsgs = state.tutor.chatsBySubject[subj]
+  subjMsgs.push({ role: 'assistant', content: `⭐ Gerando questão de prática de ${subjLabel}...` })
+  state.tutor.loading = true
+  const msgs = document.getElementById('tutorMessages')
+  if (msgs) renderMessages(msgs)
+
+  try {
+    const data = await api('/api/questao/generate', { subject: subj, difficulty: 'medio' })
+    const q = data.questao
+    const letters = ['A', 'B', 'C', 'D', 'E']
+    const optsText = q.options.map((o, i) => `${letters[i]}) ${o}`).join('\n')
+    const questionCard = `📝 **Questão de ${subjLabel}**\n\n${q.question}\n\n${optsText}\n\n_Responda a letra correta e explico o gabarito!_`
+
+    subjMsgs[subjMsgs.length - 1] = { role: 'assistant', content: questionCard, _questao: q }
+  } catch {
+    subjMsgs[subjMsgs.length - 1] = { role: 'assistant', content: 'Erro ao gerar questão. Tente novamente.' }
+  }
+
+  state.tutor.loading = false
+  const m2 = document.getElementById('tutorMessages')
+  if (m2) renderMessages(m2)
 }
 
 function renderMessages(container) {
@@ -1029,7 +1063,7 @@ function renderMais(container) {
             <div class="mais-label">Correção de Redação</div>
             <div class="mais-sub">Nota 0-1000 nas 5 competências ENEM</div>
           </div>
-          <span class="mais-badge-soon">Em breve</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
         </div>
         <div class="mais-item" data-action="flashcards">
           <div class="mais-icon">🃏</div>
@@ -1068,7 +1102,8 @@ function renderMais(container) {
       else if (a === 'planos') renderUpgradeModal()
       else if (a === 'diagnostico') switchTab('diagnostico')
       else if (a === 'plano') switchTab('plano')
-      else if (a === 'redacao' || a === 'flashcards') toast('Funcionalidade chegando em breve!', '')
+      else if (a === 'redacao') switchTab('redacao')
+      else if (a === 'flashcards') toast('Flashcards chegando em breve!', '')
     }
   })
 
@@ -1333,6 +1368,127 @@ function renderPlanoSemana(container) {
     renderPlanoGerar(container)
     gerarPlano(container)
   }
+}
+
+// ===== CORREÇÃO DE REDAÇÃO =====
+function renderRedacao(container) {
+  container.innerHTML = `
+    <div class="plano-screen">
+      <button class="btn btn-ghost btn-sm" id="redacaoBack" style="margin-bottom:1rem">← Voltar</button>
+      <div class="plano-header">
+        <div class="plano-icon">✍️</div>
+        <h2 class="plano-title">Correção de Redação</h2>
+        <p class="plano-sub">Cole sua redação e receba nota 0–1000 nas 5 competências do ENEM, com feedback detalhado.</p>
+        <div class="diag-bullets">
+          <div class="diag-bullet">✓ Nota em cada competência</div>
+          <div class="diag-bullet">✓ Pontos fortes e melhorias</div>
+          <div class="diag-bullet">${isPro() ? '✓ Correções ilimitadas' : '✓ 1 correção grátis por dia'}</div>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:1rem">
+        <div class="form-group" style="margin-bottom:0.75rem">
+          <label class="form-label">Tema da redação (opcional)</label>
+          <input type="text" class="form-input" id="redacaoTema" placeholder="Ex: Desafios da inclusão digital no Brasil">
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label">Texto da redação</label>
+          <textarea class="form-input" id="redacaoTexto" rows="10" placeholder="Cole ou digite sua redação aqui (mínimo 100 caracteres)..." style="resize:vertical;min-height:180px;font-size:0.875rem;line-height:1.6"></textarea>
+          <div id="redacaoCharCount" style="font-size:0.75rem;color:var(--text3);margin-top:0.25rem;text-align:right">0 caracteres</div>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-full" id="redacaoSubmit">✨ Corrigir redação</button>
+      <div id="redacaoResult"></div>
+    </div>
+  `
+  document.getElementById('redacaoBack').onclick = () => switchTab('mais')
+
+  const textarea = document.getElementById('redacaoTexto')
+  const charCount = document.getElementById('redacaoCharCount')
+  textarea.addEventListener('input', () => {
+    charCount.textContent = `${textarea.value.length} caracteres`
+    charCount.style.color = textarea.value.length < 100 ? 'var(--error)' : 'var(--text3)'
+  })
+
+  document.getElementById('redacaoSubmit').onclick = () => submitRedacao(container)
+}
+
+async function submitRedacao(container) {
+  const texto = document.getElementById('redacaoTexto')?.value.trim()
+  const tema = document.getElementById('redacaoTema')?.value.trim()
+  if (!texto || texto.length < 100) { toast('Mínimo 100 caracteres para corrigir.', 'error'); return }
+
+  const btn = document.getElementById('redacaoSubmit')
+  btn.disabled = true
+  btn.textContent = '⏳ Corrigindo com IA...'
+
+  try {
+    const data = await api('/api/redacao/corrigir', { texto, tema: tema || undefined })
+    renderRedacaoResult(container, data.correcao, texto, tema)
+  } catch (err) {
+    toast(err.message || 'Erro ao corrigir. Tente novamente.', 'error')
+    btn.disabled = false
+    btn.textContent = '✨ Corrigir redação'
+  }
+}
+
+function renderRedacaoResult(container, c, textoOriginal, temaOriginal) {
+  const nota = c.nota_total || 0
+  const color = nota >= 700 ? '#10b981' : nota >= 500 ? '#f59e0b' : nota >= 300 ? '#f97316' : '#ef4444'
+
+  const competRow = (comp) => {
+    const pct = Math.round((comp.nota / 200) * 100)
+    const cc = comp.nota >= 140 ? '#10b981' : comp.nota >= 80 ? '#f59e0b' : '#ef4444'
+    return `
+      <div style="margin-bottom:0.75rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.25rem">
+          <span style="font-size:0.8rem;font-weight:600">C${comp.numero}: ${comp.nome}</span>
+          <span style="font-weight:700;color:${cc}">${comp.nota}/200</span>
+        </div>
+        <div style="height:6px;background:var(--surface2);border-radius:3px;overflow:hidden;margin-bottom:0.3rem">
+          <div style="height:100%;width:${pct}%;background:${cc};border-radius:3px"></div>
+        </div>
+        <p style="font-size:0.775rem;color:var(--text2);margin:0;line-height:1.5">${comp.comentario}</p>
+      </div>
+    `
+  }
+
+  container.innerHTML = `
+    <div class="plano-screen">
+      <button class="btn btn-ghost btn-sm" id="redacaoBack2" style="margin-bottom:1rem">← Nova redação</button>
+
+      <div class="card" style="text-align:center;margin-bottom:1rem">
+        <div style="font-size:3rem;font-weight:900;color:${color}">${nota}</div>
+        <div style="font-size:0.8rem;color:var(--text2);margin-bottom:0.5rem">nota estimada ENEM (0–1000)</div>
+        ${nota >= 700 ? '<div style="font-size:0.875rem">Excelente desempenho! 🏆</div>' :
+          nota >= 500 ? '<div style="font-size:0.875rem">Bom! Foco nas melhorias abaixo. 📈</div>' :
+          '<div style="font-size:0.875rem">Muitas oportunidades de melhoria. Vamos lá! 💪</div>'}
+      </div>
+
+      <div class="card" style="margin-bottom:1rem">
+        <div class="card-title">Competências</div>
+        ${(c.competencias || []).map(competRow).join('')}
+      </div>
+
+      <div class="card" style="margin-bottom:1rem">
+        <div class="card-title">Pontos fortes</div>
+        ${(c.pontos_fortes || []).map(p => `<div style="font-size:0.875rem;margin-bottom:0.4rem">✅ ${p}</div>`).join('')}
+      </div>
+
+      <div class="card" style="margin-bottom:1rem">
+        <div class="card-title">O que melhorar</div>
+        ${(c.melhorias || []).map(m => `<div style="font-size:0.875rem;margin-bottom:0.4rem">📌 ${m}</div>`).join('')}
+      </div>
+
+      <div class="card" style="background:var(--primary-glow);border-color:rgba(59,130,246,0.3);margin-bottom:1rem">
+        <div class="card-title">Resumo do corretor</div>
+        <p style="font-size:0.875rem;line-height:1.6;margin:0">${c.resumo}</p>
+      </div>
+
+      <button class="btn btn-outline btn-full" id="redacaoNova">Corrigir outra redação</button>
+    </div>
+  `
+  document.getElementById('redacaoBack2').onclick = () => switchTab('mais')
+  document.getElementById('redacaoNova').onclick = () => renderRedacao(container)
 }
 
 // ===== UPGRADE MODAL =====
