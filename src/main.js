@@ -577,6 +577,10 @@ function answerQuestaoHoje(idx, q) {
     toast('Quase! Veja a explicação abaixo.', '')
   }
   state.progresso.totalQuestions = (state.progresso.totalQuestions || 0) + 1
+  if (!state.progresso.subjects) state.progresso.subjects = {}
+  if (!state.progresso.subjects[q.subject]) state.progresso.subjects[q.subject] = { total: 0, correct: 0 }
+  state.progresso.subjects[q.subject].total++
+  if (isCorrect) state.progresso.subjects[q.subject].correct++
   saveLocal('progresso', state.progresso)
   const dailyCount = incrementDailyProgress()
   recordStudyToday()
@@ -589,7 +593,15 @@ function answerQuestaoHoje(idx, q) {
     if (dailyCount >= MISSION_GOAL) mFill.classList.add('done')
   }
   if (mCount) mCount.textContent = `${Math.min(dailyCount, MISSION_GOAL)}/${MISSION_GOAL}`
-  api('/api/user/resposta', { questaoId: q.id, correct: isCorrect, subject: q.subject }).catch(() => {})
+  api('/api/user/resposta', { questaoId: q.id, correct: isCorrect, subject: q.subject })
+    .then(res => {
+      if (res?.streak !== undefined) {
+        state.progresso.streak = res.streak
+        const badge = document.querySelector('.streak-badge')
+        if (badge) badge.textContent = `🔥 ${res.streak}`
+      }
+    })
+    .catch(() => {})
 }
 
 // ===== TAB: TUTOR =====
@@ -1320,9 +1332,11 @@ function renderDiagQuiz(container) {
       btn.onclick = () => { state.diag.answers[current] = parseInt(btn.dataset.idx); renderTab('diagnostico') }
     })
   }
-  document.getElementById('diagExit')?.onclick = () => { state.diag.screen = 'intro'; renderTab('diagnostico') }
-  document.getElementById('diagNext')?.onclick = () => { state.diag.current++; renderTab('diagnostico') }
-  document.getElementById('diagFinish')?.onclick = () => finishDiagnostico()
+  document.getElementById('diagExit').onclick = () => { state.diag.screen = 'intro'; renderTab('diagnostico') }
+  const elNext = document.getElementById('diagNext')
+  if (elNext) elNext.onclick = () => { state.diag.current++; renderTab('diagnostico') }
+  const elFinish = document.getElementById('diagFinish')
+  if (elFinish) elFinish.onclick = () => finishDiagnostico()
 }
 
 function finishDiagnostico() {
