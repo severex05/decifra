@@ -188,6 +188,30 @@ function saveFlashcardDeck(deck) {
   localStorage.setItem('decifra_flashcards', JSON.stringify(deck))
 }
 
+function loadSimuladoHistory() { return loadLocal('simulado_history') || [] }
+function saveToSimuladoHistory(entry) {
+  const h = loadSimuladoHistory(); h.unshift(entry)
+  if (h.length > 20) h.length = 20
+  saveLocal('simulado_history', h)
+}
+function loadRedacaoHistory() { return loadLocal('redacao_history') || [] }
+function saveToRedacaoHistory(entry) {
+  const h = loadRedacaoHistory(); h.unshift(entry)
+  if (h.length > 10) h.length = 10
+  saveLocal('redacao_history', h)
+}
+
+function shareResult(text) {
+  const url = 'https://decifra-eight.vercel.app'
+  if (navigator.share) {
+    navigator.share({ title: 'Decifra', text, url }).catch(() => {})
+  } else {
+    navigator.clipboard?.writeText(`${text} ${url}`)
+      .then(() => toast('Copiado para a área de transferência!', 'success'))
+      .catch(() => toast(text, ''))
+  }
+}
+
 function getDueCards(deck) {
   const today = new Date().toISOString().slice(0, 10)
   return deck.filter(c => !c.nextReview || c.nextReview <= today)
@@ -945,7 +969,31 @@ function renderSimulados(container) {
           </div>
           <div class="simulado-type-icon">🏛️</div>
         </div>
+        <div class="simulado-type-card" data-type="ia">
+          <div class="simulado-type-info">
+            <h3>Simulado IA ✨</h3>
+            <p>10 questões únicas geradas por IA — banco infinito</p>
+            <div class="simulado-meta">
+              <span class="meta-chip">⏱ ~15 min</span>
+              <span class="meta-chip">10 questões</span>
+              ${isPro() ? '' : '<span class="meta-chip" style="color:var(--primary)">Pro</span>'}
+            </div>
+          </div>
+          <div class="simulado-type-icon">🤖</div>
+        </div>
       </div>
+      ${(() => {
+        const hist = loadSimuladoHistory()
+        if (!hist.length) return ''
+        const typeNames = { mini: 'Mini', enem: 'ENEM', vestibular: 'Vestibular', concurso: 'Concurso', ia: 'IA ✨' }
+        const items = hist.slice(0, 5).map(h => {
+          const color = h.pct >= 70 ? '#10b981' : h.pct >= 50 ? '#f59e0b' : '#ef4444'
+          const d = new Date(h.date)
+          const dateStr = d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+          return `<div class="history-item"><span class="history-type">${typeNames[h.type] || h.type}</span><span class="history-date">${dateStr}</span><span class="history-pct" style="color:${color}">${h.pct}%</span></div>`
+        }).join('')
+        return `<div class="mais-section-title" style="margin-top:1.25rem;margin-bottom:0.5rem">Histórico recente</div><div class="history-list">${items}</div>`
+      })()}
       ${!isPro() ? `
       <div class="card" style="background:var(--primary-glow); border-color:rgba(59,130,246,0.3);">
         <div style="display:flex;gap:0.75rem;align-items:center;">
@@ -964,6 +1012,10 @@ function renderSimulados(container) {
     card.onclick = () => {
       const type = card.dataset.type
       if (type !== 'mini' && !isPro()) { renderUpgradeModal(); return }
+      if (type === 'ia') {
+        const content = document.getElementById('appContent')
+        if (content) content.innerHTML = `<div class="loading-screen"><div class="loading-logo">Decifra<span>.</span></div><div class="spinner"></div><p style="color:var(--text2);font-size:0.875rem">Gerando questões com IA... (~10s)</p></div>`
+      }
       startSimulado(type)
     }
   })
@@ -982,7 +1034,9 @@ async function startSimulado(type) {
   if (content) content.innerHTML = `<div class="loading-screen"><div class="loading-logo">Decifra<span>.</span></div><div class="spinner"></div><p style="color:var(--text2);font-size:0.875rem">Preparando simulado...</p></div>`
 
   try {
-    const data = await api('/api/simulado/start', { type })
+    const data = type === 'ia'
+      ? await api('/api/simulado/ia', {})
+      : await api('/api/simulado/start', { type })
     state.simulado.questions = data.questions
     state.simulado.current = 0
     state.simulado.answers = []
@@ -1123,6 +1177,13 @@ async function finishSimulado() {
   })
 
   state.simulado.score = { correct, total: questions.length, bySubject }
+  saveToSimuladoHistory({
+    date: new Date().toISOString(),
+    type: state.simulado.type,
+    correct,
+    total: questions.length,
+    pct: Math.round((correct / questions.length) * 100)
+  })
   recordStudyToday()
   api('/api/simulado/finish', { type: state.simulado.type, score: state.simulado.score })
     .then(res => {
@@ -1177,11 +1238,17 @@ function renderResults(container) {
         <button class="btn btn-primary" id="resReview" style="flex:1">Ver gabarito</button>
       </div>
       ${score.correct < score.total ? `<button class="btn btn-outline btn-full" id="resSaveFlash" style="margin-top:0.75rem">🃏 Salvar erros como flashcards</button>` : ''}
+      <button class="btn btn-ghost btn-full" id="resShare" style="margin-top:0.5rem">📤 Compartilhar resultado</button>
     </div>
   `
 
   document.getElementById('resBack').onclick = () => { state.simulado.screen = 'menu'; renderTab('simulados') }
   document.getElementById('resReview').onclick = () => { state.simulado.screen = 'quiz'; state.simulado.current = 0; renderTab('simulados') }
+  document.getElementById('resShare').onclick = () => {
+    const typeNames = { mini: 'Mini-simulado', enem: 'ENEM', vestibular: 'Vestibular', concurso: 'Concurso', ia: 'Simulado IA' }
+    const typeName = typeNames[state.simulado.type] || 'Simulado'
+    shareResult(`Acertei ${score.correct}/${score.total} (${pct}%) no ${typeName} do Decifra! 📚 Estude para o ENEM grátis em`)
+  }
 
   document.getElementById('resSaveFlash')?.addEventListener('click', () => {
     const { questions, answers } = state.simulado
@@ -1315,7 +1382,10 @@ function renderMais(container) {
       ${!isPro() ? `
       <button class="btn btn-primary btn-full" id="maisUpgrade" style="margin-bottom:1rem">
         ⭐ Ativar Pro — 7 dias grátis
-      </button>` : ''}
+      </button>` : `
+      <button class="btn btn-outline btn-full" id="maisPortal" style="margin-bottom:1rem">
+        💳 Gerenciar assinatura
+      </button>`}
 
       <div class="mais-section-title">Ferramentas de estudo</div>
       <div class="mais-grid">
@@ -1399,6 +1469,17 @@ function renderMais(container) {
   })
 
   document.getElementById('maisUpgrade')?.addEventListener('click', () => renderUpgradeModal())
+  document.getElementById('maisPortal')?.addEventListener('click', async () => {
+    const btn = document.getElementById('maisPortal')
+    btn.disabled = true; btn.textContent = 'Aguarde...'
+    try {
+      const data = await api('/api/stripe/portal', {})
+      window.location.href = data.url
+    } catch {
+      toast('Erro ao abrir portal. Tente novamente.', 'error')
+      btn.disabled = false; btn.textContent = '💳 Gerenciar assinatura'
+    }
+  })
 }
 
 // ===== DIAGNÓSTICO =====
@@ -1717,6 +1798,18 @@ function renderRedacao(container) {
       </div>
       <button class="btn btn-primary btn-full" id="redacaoSubmit">✨ Corrigir redação</button>
       <div id="redacaoResult"></div>
+      ${(() => {
+        const hist = loadRedacaoHistory()
+        if (!hist.length) return ''
+        const items = hist.slice(0, 3).map(h => {
+          const color = h.nota >= 700 ? '#10b981' : h.nota >= 500 ? '#f59e0b' : '#ef4444'
+          const d = new Date(h.date)
+          const dateStr = d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+          const temaShort = h.tema.length > 30 ? h.tema.slice(0, 30) + '…' : h.tema
+          return `<div class="history-item"><div class="history-info"><span class="history-type">${temaShort}</span><span class="history-date">${dateStr}</span></div><span class="history-pct" style="color:${color}">${h.nota}</span></div>`
+        }).join('')
+        return `<div class="mais-section-title" style="margin-top:1.25rem;margin-bottom:0.5rem">Correções anteriores</div><div class="history-list">${items}</div>`
+      })()}
     </div>
   `
   document.getElementById('redacaoBack').onclick = () => switchTab('mais')
@@ -1742,6 +1835,11 @@ async function submitRedacao(container) {
 
   try {
     const data = await api('/api/redacao/corrigir', { texto, tema: tema || undefined })
+    saveToRedacaoHistory({
+      date: new Date().toISOString(),
+      tema: tema || 'Sem tema',
+      nota: data.correcao?.nota_total || 0
+    })
     renderRedacaoResult(container, data.correcao, texto, tema)
   } catch (err) {
     toast(err.message || 'Erro ao corrigir. Tente novamente.', 'error')
@@ -1803,11 +1901,18 @@ function renderRedacaoResult(container, c, textoOriginal, temaOriginal) {
         <p style="font-size:0.875rem;line-height:1.6;margin:0">${c.resumo}</p>
       </div>
 
-      <button class="btn btn-outline btn-full" id="redacaoNova">Corrigir outra redação</button>
+      <div style="display:flex;gap:0.75rem;margin-top:0">
+        <button class="btn btn-outline" id="redacaoNova" style="flex:1">Nova redação</button>
+        <button class="btn btn-ghost" id="redacaoShare" style="flex:1">📤 Compartilhar</button>
+      </div>
     </div>
   `
   document.getElementById('redacaoBack2').onclick = () => switchTab('mais')
   document.getElementById('redacaoNova').onclick = () => renderRedacao(container)
+  document.getElementById('redacaoShare').onclick = () => {
+    const temaText = temaOriginal ? ` sobre "${temaOriginal}"` : ''
+    shareResult(`Tirei ${nota} na redação ENEM${temaText} pelo Decifra! ✍️ Corrija a sua grátis em`)
+  }
 }
 
 // ===== TAB: FLASHCARDS =====

@@ -1233,6 +1233,15 @@ body {
 .hoje-plano-subj { display: block; font-size: 0.8rem; font-weight: 700; }
 .hoje-plano-topic { display: block; font-size: 0.72rem; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* ===== HISTORY LIST ===== */
+.history-list { display: flex; flex-direction: column; gap: 0; background: var(--surface); border-radius: 12px; overflow: hidden; border: 1px solid var(--border); }
+.history-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.65rem 1rem; border-bottom: 1px solid var(--border); }
+.history-item:last-child { border-bottom: none; }
+.history-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.1rem; }
+.history-type { font-size: 0.8rem; font-weight: 700; }
+.history-date { font-size: 0.72rem; color: var(--text3); }
+.history-pct { font-size: 0.9rem; font-weight: 800; flex-shrink: 0; }
+
 /* ===== AI FLASHCARD GENERATION ===== */
 .fc-ai-section { border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 0.5rem; }
 .fc-ai-divider { text-align: center; color: var(--text3); font-size: 0.7rem; font-weight: 700; margin-bottom: 0.75rem; padding: 0 1rem; letter-spacing: 0.5px; text-transform: uppercase; }
