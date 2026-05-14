@@ -351,9 +351,11 @@ function logout() {
   localStorage.removeItem('decifra_token')
   localStorage.removeItem('decifra_user')
   localStorage.removeItem('decifra_plan')
+  localStorage.removeItem('decifra_plano_cache')
   state.user = null
   state.token = null
   state.plan = 'free'
+  state.plano = null
   renderAuth('login')
 }
 
@@ -520,6 +522,11 @@ async function renderInicio(container) {
   const missionDone = dailyDone >= MISSION_GOAL
   const missionPct = Math.min(100, Math.round((dailyDone / MISSION_GOAL) * 100))
 
+  const DAY_NAMES = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
+  const todayDayName = DAY_NAMES[new Date().getDay()]
+  const SUBJ_EMOJI_MAP = { matematica: '📐', portugues: '📖', biologia: '🧬', quimica: '⚗️', fisica: '⚡', historia: '🏛️', geografia: '🌍', filosofia: '🤔', ingles: '🌐' }
+  const todayPlan = state.plano?.dias?.find(d => d.dia === todayDayName) || null
+
   container.innerHTML = `
     <div class="inicio-greeting">
       <div class="greeting-text">${saudacao}, ${nome}! 👋</div>
@@ -551,6 +558,25 @@ async function renderInicio(container) {
       </div>
     </div>
     <div id="questaoHojeContainer"></div>
+    ${todayPlan ? `
+    <div class="card hoje-plano">
+      <div class="hoje-plano-header">
+        <span class="hoje-plano-title">📋 Hoje no seu plano</span>
+        <button class="btn btn-ghost btn-sm" data-action="plano">Ver plano</button>
+      </div>
+      <div class="hoje-plano-items">
+        ${todayPlan.materias.map(m => `
+          <div class="hoje-plano-item">
+            <span class="hoje-plano-emoji">${SUBJ_EMOJI_MAP[m.materia] || '📚'}</span>
+            <div class="hoje-plano-info">
+              <span class="hoje-plano-subj">${subjectLabel(m.materia)}</span>
+              <span class="hoje-plano-topic">${m.topico} · ${m.minutos}min</span>
+            </div>
+            <button class="btn btn-primary btn-sm" data-plano-study="${m.materia}">Estudar</button>
+          </div>
+        `).join('')}
+      </div>
+    </div>` : ''}
     <div class="quick-actions">
       <div class="quick-title">Acesso rápido</div>
       <div class="quick-grid">
@@ -572,7 +598,17 @@ async function renderInicio(container) {
         <button class="quick-btn" data-action="flashcard">
           <div class="quick-btn-icon">🃏</div>
           <div class="quick-btn-label">Flashcards</div>
-          <div class="quick-btn-sub">Em breve</div>
+          <div class="quick-btn-sub">Revisão espaçada</div>
+        </button>
+        <button class="quick-btn" data-action="redacao">
+          <div class="quick-btn-icon">✍️</div>
+          <div class="quick-btn-label">Redação</div>
+          <div class="quick-btn-sub">IA 0–1000</div>
+        </button>
+        <button class="quick-btn" data-action="diagnostico">
+          <div class="quick-btn-icon">🔬</div>
+          <div class="quick-btn-label">Diagnóstico</div>
+          <div class="quick-btn-sub">Descubra seu nível</div>
         </button>
       </div>
     </div>
@@ -585,6 +621,16 @@ async function renderInicio(container) {
       else if (a === 'simulado') { switchTab('simulados') }
       else if (a === 'simulado-mini') { state.simulado.type = 'mini'; switchTab('simulados'); startSimulado('mini') }
       else if (a === 'flashcard') switchTab('flashcards')
+      else if (a === 'redacao') switchTab('redacao')
+      else if (a === 'diagnostico') switchTab('diagnostico')
+      else if (a === 'plano') switchTab('plano')
+    }
+  })
+
+  container.querySelectorAll('[data-plano-study]').forEach(btn => {
+    btn.onclick = () => {
+      state.tutor.subject = btn.dataset.planoStudy
+      switchTab('tutor')
     }
   })
 
@@ -1130,11 +1176,31 @@ function renderResults(container) {
         <button class="btn btn-outline" id="resBack" style="flex:1">Novo simulado</button>
         <button class="btn btn-primary" id="resReview" style="flex:1">Ver gabarito</button>
       </div>
+      ${score.correct < score.total ? `<button class="btn btn-outline btn-full" id="resSaveFlash" style="margin-top:0.75rem">🃏 Salvar erros como flashcards</button>` : ''}
     </div>
   `
 
   document.getElementById('resBack').onclick = () => { state.simulado.screen = 'menu'; renderTab('simulados') }
   document.getElementById('resReview').onclick = () => { state.simulado.screen = 'quiz'; state.simulado.current = 0; renderTab('simulados') }
+
+  document.getElementById('resSaveFlash')?.addEventListener('click', () => {
+    const { questions, answers } = state.simulado
+    const today = new Date().toISOString().slice(0, 10)
+    const wrongCards = questions.filter((q, i) => answers[i] !== undefined && answers[i] !== -1 && answers[i] !== q.answerIndex)
+    if (wrongCards.length === 0) { toast('Nenhum erro para salvar.', ''); return }
+    const deck = loadFlashcardDeck()
+    wrongCards.forEach(q => {
+      deck.push({
+        id: `sim_${q.id}_${Date.now()}`,
+        subject: q.subject,
+        front: q.question.length > 250 ? q.question.slice(0, 250) + '...' : q.question,
+        back: `✅ ${q.options[q.answerIndex]}\n\n${q.explanation}`,
+        interval: 1, ease: 2.5, nextReview: today, reps: 0, createdAt: today
+      })
+    })
+    saveFlashcardDeck(deck)
+    toast(`${wrongCards.length} erros salvos como flashcards! 🃏`, 'success')
+  })
 }
 
 // ===== TAB: PROGRESSO =====
@@ -1517,7 +1583,10 @@ function renderDiagResult(container) {
 async function renderPlanoEstudo(container) {
   container.innerHTML = `<div class="loading-screen"><div class="spinner"></div></div>`
   if (!state.plano) {
-    try { const data = await api('/api/plano-estudo'); state.plano = data.plan } catch {}
+    try {
+      const data = await api('/api/plano-estudo')
+      if (data.plan) { state.plano = data.plan; saveLocal('plano_cache', data.plan) }
+    } catch {}
   }
   if (!state.plano) renderPlanoGerar(container)
   else renderPlanoSemana(container)
@@ -1550,6 +1619,7 @@ async function gerarPlano(container) {
   try {
     const data = await api('/api/plano-estudo/generate', {})
     state.plano = data.plan
+    saveLocal('plano_cache', state.plano)
     renderPlanoSemana(container)
     toast('Plano gerado! 🎉', 'success')
   } catch (err) {
@@ -1857,10 +1927,41 @@ function renderFlashcardsNew(container) {
         </div>
         <button class="btn btn-primary btn-full" id="fcSave">Salvar flashcard</button>
       </div>
+      <div class="fc-ai-section">
+        <div class="fc-ai-divider">ou gere automaticamente com IA</div>
+        <div style="padding: 0 1rem">
+          <div class="form-group">
+            <label class="form-label">Tópico para gerar com IA</label>
+            <input type="text" class="form-input" id="fcAiTopic" placeholder="Ex: Lei de Ohm, Segunda Guerra...">
+          </div>
+          <button class="btn btn-outline btn-full" id="fcAiGen">✨ Gerar flashcard com IA${isPro() ? '' : ' (Pro)'}</button>
+        </div>
+      </div>
     </div>
   `
 
   document.getElementById('fcBack').onclick = () => { state.flashcards.screen = 'menu'; renderFlashcards(container) }
+
+  document.getElementById('fcAiGen').onclick = async () => {
+    if (!isPro()) { renderUpgradeModal(); return }
+    const subject = document.getElementById('fcSubject').value
+    const topic = document.getElementById('fcAiTopic').value.trim()
+    const btn = document.getElementById('fcAiGen')
+    btn.disabled = true
+    btn.textContent = '⏳ Gerando...'
+    try {
+      const data = await api('/api/flashcard/generate', { subject, topic: topic || undefined })
+      document.getElementById('fcFront').value = data.front
+      document.getElementById('fcBack').value = data.back
+      toast('Flashcard gerado! Revise e salve. 🃏', 'success')
+    } catch {
+      toast('Erro ao gerar. Tente novamente.', 'error')
+    } finally {
+      btn.disabled = false
+      btn.textContent = `✨ Gerar flashcard com IA${isPro() ? '' : ' (Pro)'}`
+    }
+  }
+
   document.getElementById('fcSave').onclick = () => {
     const subject = document.getElementById('fcSubject').value
     const front = document.getElementById('fcFront').value.trim()
@@ -2088,6 +2189,7 @@ async function init() {
       state.token = token
       state.plan = localStorage.getItem('decifra_plan') || 'free'
       state.progresso = loadLocal('progresso') || state.progresso
+      state.plano = loadLocal('plano_cache') || null
 
       app.innerHTML = `<div class="loading-screen"><div class="loading-logo">Decifra<span>.</span></div><div class="spinner"></div></div>`
 
