@@ -44,6 +44,7 @@ const state = {
   tutor: { chatsBySubject: {}, subject: 'matematica', loading: false, used: 0, limit: 5 },
   simulado: { screen: 'menu', type: null, questions: [], current: 0, answers: [], timeLeft: 0, timer: null, score: null, loading: false },
   diag: { screen: 'intro', questions: [], current: 0, answers: [] },
+  flashcards: { screen: 'menu', reviewIdx: 0, flipped: false },
   progresso: { totalQuestions: 0, correct: 0, streak: 0, subjects: {}, simuladosDone: 0 },
   plano: null,
   questaoHoje: null,
@@ -56,6 +57,11 @@ const state = {
 // ===== HELPERS =====
 const $ = id => document.getElementById(id)
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html) e.innerHTML = html; return e }
+function formatDate(dateStr) {
+  if (!dateStr) return ''
+  const d = new Date(dateStr + 'T00:00:00')
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+}
 
 function getToken() {
   return localStorage.getItem('decifra_token') || state.token
@@ -171,6 +177,84 @@ function showBadgeUnlockModal(badge) {
   document.getElementById('badgeOk').onclick = () => overlay.remove()
   overlay.onclick = e => { if (e.target === overlay) overlay.remove() }
   setTimeout(() => { if (overlay.parentNode) overlay.remove() }, 8000)
+}
+
+// ===== FLASHCARDS HELPERS =====
+function loadFlashcardDeck() {
+  return JSON.parse(localStorage.getItem('decifra_flashcards') || '[]')
+}
+
+function saveFlashcardDeck(deck) {
+  localStorage.setItem('decifra_flashcards', JSON.stringify(deck))
+}
+
+function getDueCards(deck) {
+  const today = new Date().toISOString().slice(0, 10)
+  return deck.filter(c => !c.nextReview || c.nextReview <= today)
+}
+
+function rateCard(card, rating) {
+  let { interval = 1, ease = 2.5 } = card
+  if (rating === 1) { interval = 1; ease = Math.max(1.3, ease - 0.2) }
+  else if (rating === 2) { interval = Math.max(1, Math.round(interval * ease)) }
+  else { interval = Math.max(2, Math.round(interval * ease * 1.3)); ease = Math.min(3.0, ease + 0.1) }
+  const next = new Date()
+  next.setDate(next.getDate() + interval)
+  return { ...card, interval, ease: Math.round(ease * 100) / 100, nextReview: next.toISOString().slice(0, 10), reps: (card.reps || 0) + 1 }
+}
+
+// ===== NOTIFICATIONS HELPERS =====
+async function requestNotifPermission() {
+  if (!('Notification' in window)) { toast('Seu navegador não suporta notificações.', ''); return }
+  if (Notification.permission === 'granted') {
+    localStorage.setItem('decifra_notif_enabled', 'true')
+    toast('Notificações ativadas! 🔔', 'success')
+    renderTab(state.tab)
+    return
+  }
+  if (Notification.permission === 'denied') { toast('Notificações bloqueadas. Habilite nas configurações do navegador.', ''); return }
+  const result = await Notification.requestPermission()
+  if (result === 'granted') {
+    localStorage.setItem('decifra_notif_enabled', 'true')
+    toast('Notificações ativadas! 🔔', 'success')
+    renderTab(state.tab)
+  } else {
+    toast('Permissão negada. Notificações não ativadas.', '')
+  }
+}
+
+function disableNotifications() {
+  localStorage.setItem('decifra_notif_enabled', 'false')
+  toast('Notificações desativadas.', '')
+  renderTab(state.tab)
+}
+
+function checkDailyNotification() {
+  const notifEnabled = localStorage.getItem('decifra_notif_enabled') === 'true'
+  if (!notifEnabled) return
+  if (!('Notification' in window) || Notification.permission !== 'granted') return
+  const today = new Date().toISOString().slice(0, 10)
+  const lastNotif = localStorage.getItem('decifra_last_notif')
+  if (lastNotif === today) return
+  const hour = new Date().getHours()
+  if (hour < 8) return
+  const studyLog = JSON.parse(localStorage.getItem('decifra_study_log') || '[]')
+  if (studyLog.includes(today)) return
+  localStorage.setItem('decifra_last_notif', today)
+  try {
+    if (navigator.serviceWorker?.controller) {
+      navigator.serviceWorker.controller.postMessage({
+        type: 'NOTIFY',
+        title: 'Decifra — hora de estudar! 📚',
+        body: 'Você ainda não estudou hoje. Vamos manter o streak?'
+      })
+    } else {
+      new Notification('Decifra — hora de estudar! 📚', {
+        body: 'Você ainda não estudou hoje. Vamos manter o streak?',
+        icon: '/icons/favicon.svg'
+      })
+    }
+  } catch {}
 }
 
 // ===== AUTH =====
@@ -421,6 +505,7 @@ function renderTab(id) {
     case 'diagnostico': renderDiagnosticoScreen(content); break
     case 'plano':       renderPlanoEstudo(content); break
     case 'redacao':     renderRedacao(content); break
+    case 'flashcards':  renderFlashcards(content); break
   }
 }
 
@@ -499,7 +584,7 @@ async function renderInicio(container) {
       if (a === 'tutor') switchTab('tutor')
       else if (a === 'simulado') { switchTab('simulados') }
       else if (a === 'simulado-mini') { state.simulado.type = 'mini'; switchTab('simulados'); startSimulado('mini') }
-      else if (a === 'flashcard') toast('Flashcards chegando em breve!', '')
+      else if (a === 'flashcard') switchTab('flashcards')
     }
   })
 
@@ -1148,6 +1233,7 @@ function renderMais(container) {
   const user = JSON.parse(localStorage.getItem('decifra_user') || '{}')
   const plan = state.plan
   const initial = (user?.name || user?.email || 'U')[0].toUpperCase()
+  const notifEnabled = localStorage.getItem('decifra_notif_enabled') === 'true'
 
   container.innerHTML = `
     <div class="mais-screen">
@@ -1197,7 +1283,19 @@ function renderMais(container) {
             <div class="mais-label">Flashcards</div>
             <div class="mais-sub">Revisão espaçada por matéria</div>
           </div>
-          <span class="mais-badge-soon">Em breve</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+      </div>
+
+      <div class="mais-section-title">Configurações</div>
+      <div class="mais-grid">
+        <div class="mais-item" data-action="notif">
+          <div class="mais-icon">🔔</div>
+          <div class="mais-info">
+            <div class="mais-label">Notificações diárias</div>
+            <div class="mais-sub">${notifEnabled ? 'Ativadas — lembrete diário de estudo' : 'Desativadas'}</div>
+          </div>
+          <div class="mais-notif-toggle ${notifEnabled ? 'on' : ''}">${notifEnabled ? 'ON' : 'OFF'}</div>
         </div>
       </div>
 
@@ -1229,7 +1327,8 @@ function renderMais(container) {
       else if (a === 'diagnostico') switchTab('diagnostico')
       else if (a === 'plano') switchTab('plano')
       else if (a === 'redacao') switchTab('redacao')
-      else if (a === 'flashcards') toast('Flashcards chegando em breve!', '')
+      else if (a === 'flashcards') switchTab('flashcards')
+      else if (a === 'notif') { if (notifEnabled) disableNotifications(); else requestNotifPermission() }
     }
   })
 
@@ -1641,6 +1740,234 @@ function renderRedacaoResult(container, c, textoOriginal, temaOriginal) {
   document.getElementById('redacaoNova').onclick = () => renderRedacao(container)
 }
 
+// ===== TAB: FLASHCARDS =====
+function renderFlashcards(container) {
+  const { screen } = state.flashcards
+  if (screen === 'menu') renderFlashcardsMenu(container)
+  else if (screen === 'new') renderFlashcardsNew(container)
+  else if (screen === 'review') renderFlashcardsReview(container)
+}
+
+function renderFlashcardsMenu(container) {
+  const deck = loadFlashcardDeck()
+  const due = getDueCards(deck)
+  const today = new Date().toISOString().slice(0, 10)
+  const bySubject = {}
+  deck.forEach(c => {
+    if (!bySubject[c.subject]) bySubject[c.subject] = []
+    bySubject[c.subject].push(c)
+  })
+
+  const subjectSections = Object.keys(bySubject).map(subj => {
+    const cards = bySubject[subj]
+    return `
+      <div class="fc-subject-section">
+        <div class="fc-subject-header">
+          <span class="subject-chip ${subjectClass(subj)}">${SUBJECTS.find(x => x.id === subj)?.emoji || '📚'} ${subjectLabel(subj)}</span>
+          <span class="fc-count">${cards.length} ${cards.length === 1 ? 'card' : 'cards'}</span>
+        </div>
+        <div class="fc-cards-list">
+          ${cards.map(c => {
+            const isDue = !c.nextReview || c.nextReview <= today
+            return `
+              <div class="fc-item">
+                <div class="fc-item-front">${c.front}</div>
+                <div class="fc-item-meta">
+                  ${isDue ? '<span class="fc-due-badge">Revisar hoje</span>' : `<span class="fc-next-date">Próxima: ${formatDate(c.nextReview)}</span>`}
+                </div>
+                <button class="fc-delete-btn" data-delete="${c.id}">✕</button>
+              </div>
+            `
+          }).join('')}
+        </div>
+      </div>
+    `
+  }).join('')
+
+  container.innerHTML = `
+    <div class="fc-screen">
+      <div class="fc-header">
+        <div class="fc-title">🃏 Flashcards</div>
+        <button class="btn btn-primary btn-sm" id="fcNew">+ Novo card</button>
+      </div>
+      ${due.length > 0 ? `
+        <button class="btn btn-primary btn-full fc-review-btn" id="fcStartReview">
+          Revisar ${due.length} ${due.length === 1 ? 'card' : 'cards'} de hoje
+        </button>
+      ` : deck.length > 0 ? `
+        <div class="fc-empty-review">✅ Todos os cards revisados por hoje!</div>
+      ` : ''}
+      ${deck.length === 0 ? `
+        <div class="fc-empty-state">
+          <div class="fc-empty-icon">🃏</div>
+          <div class="fc-empty-title">Nenhum flashcard ainda</div>
+          <div class="fc-empty-sub">Crie flashcards para revisar conceitos importantes com revisão espaçada</div>
+          <button class="btn btn-primary" id="fcNewEmpty">Criar primeiro flashcard</button>
+        </div>
+      ` : `
+        <div class="fc-stats-row">
+          <div class="fc-stat"><span class="fc-stat-val">${deck.length}</span><span class="fc-stat-lbl">Total</span></div>
+          <div class="fc-stat"><span class="fc-stat-val text-accent">${due.length}</span><span class="fc-stat-lbl">Para revisar</span></div>
+          <div class="fc-stat"><span class="fc-stat-val text-success">${deck.filter(c => (c.reps || 0) > 0).length}</span><span class="fc-stat-lbl">Estudados</span></div>
+        </div>
+        <div class="fc-subjects">${subjectSections}</div>
+      `}
+    </div>
+  `
+
+  document.getElementById('fcNew')?.addEventListener('click', () => { state.flashcards.screen = 'new'; renderFlashcards(container) })
+  document.getElementById('fcNewEmpty')?.addEventListener('click', () => { state.flashcards.screen = 'new'; renderFlashcards(container) })
+  document.getElementById('fcStartReview')?.addEventListener('click', () => {
+    state.flashcards.screen = 'review'
+    state.flashcards.reviewIdx = 0
+    state.flashcards.flipped = false
+    renderFlashcards(container)
+  })
+  container.querySelectorAll('[data-delete]').forEach(btn => {
+    btn.onclick = e => {
+      e.stopPropagation()
+      const deck = loadFlashcardDeck()
+      saveFlashcardDeck(deck.filter(c => c.id !== btn.dataset.delete))
+      renderFlashcardsMenu(container)
+    }
+  })
+}
+
+function renderFlashcardsNew(container) {
+  const subjectOpts = SUBJECTS.map(s => `<option value="${s.id}">${s.emoji} ${s.label}</option>`).join('')
+
+  container.innerHTML = `
+    <div class="fc-screen">
+      <div class="fc-new-header">
+        <button class="btn btn-ghost btn-sm" id="fcBack">← Voltar</button>
+        <div class="fc-new-title">Novo flashcard</div>
+      </div>
+      <div class="card" style="margin:0 1rem 1rem">
+        <div class="form-group">
+          <label class="form-label">Matéria</label>
+          <select class="form-input" id="fcSubject">${subjectOpts}</select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Frente (pergunta / conceito)</label>
+          <textarea class="form-input fc-textarea" id="fcFront" placeholder="Ex: O que é fotossíntese?" rows="3"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Verso (resposta / definição)</label>
+          <textarea class="form-input fc-textarea" id="fcBack" placeholder="Ex: Processo pelo qual plantas produzem energia usando luz solar..." rows="4"></textarea>
+        </div>
+        <button class="btn btn-primary btn-full" id="fcSave">Salvar flashcard</button>
+      </div>
+    </div>
+  `
+
+  document.getElementById('fcBack').onclick = () => { state.flashcards.screen = 'menu'; renderFlashcards(container) }
+  document.getElementById('fcSave').onclick = () => {
+    const subject = document.getElementById('fcSubject').value
+    const front = document.getElementById('fcFront').value.trim()
+    const back = document.getElementById('fcBack').value.trim()
+    if (!front || !back) { toast('Preencha a frente e o verso do card.', 'error'); return }
+    const deck = loadFlashcardDeck()
+    const today = new Date().toISOString().slice(0, 10)
+    deck.push({ id: Date.now().toString(), subject, front, back, interval: 1, ease: 2.5, nextReview: today, reps: 0, createdAt: today })
+    saveFlashcardDeck(deck)
+    toast('Flashcard salvo! 🃏', 'success')
+    state.flashcards.screen = 'menu'
+    renderFlashcards(container)
+  }
+}
+
+function renderFlashcardsReview(container) {
+  const deck = loadFlashcardDeck()
+  const queue = getDueCards(deck)
+  const idx = state.flashcards.reviewIdx
+  const flipped = state.flashcards.flipped
+
+  if (queue.length === 0 || idx >= queue.length) {
+    const reviewed = idx
+    container.innerHTML = `
+      <div class="fc-screen">
+        <div class="fc-done">
+          <div class="fc-done-icon">🎉</div>
+          <div class="fc-done-title">Revisão completa!</div>
+          <div class="fc-done-sub">Você revisou ${reviewed} ${reviewed === 1 ? 'card' : 'cards'} hoje. Continue assim!</div>
+          <button class="btn btn-primary" id="fcDoneBack">Ver meus flashcards</button>
+        </div>
+      </div>
+    `
+    document.getElementById('fcDoneBack').onclick = () => {
+      state.flashcards.screen = 'menu'
+      state.flashcards.reviewIdx = 0
+      state.flashcards.flipped = false
+      renderFlashcards(container)
+    }
+    if (reviewed > 0) { incrementDailyProgress(); recordStudyToday() }
+    return
+  }
+
+  const card = queue[idx]
+  const subj = SUBJECTS.find(x => x.id === card.subject)
+
+  container.innerHTML = `
+    <div class="fc-screen">
+      <div class="fc-review-header">
+        <button class="btn btn-ghost btn-sm" id="fcReviewBack">← Sair</button>
+        <div class="fc-progress-text">${idx + 1} / ${queue.length}</div>
+      </div>
+      <div class="fc-progress-bar-wrap">
+        <div class="fc-progress-bar" style="width:${Math.round((idx / queue.length) * 100)}%"></div>
+      </div>
+      <div class="fc-card-wrap">
+        <div class="fc-card ${flipped ? 'flipped' : ''}">
+          <div class="fc-card-side fc-card-front">
+            <div class="fc-card-label">Pergunta</div>
+            <div class="fc-card-text">${card.front}</div>
+            <div class="fc-card-subject"><span class="subject-chip ${subjectClass(card.subject)}">${subj?.emoji || ''} ${subjectLabel(card.subject)}</span></div>
+          </div>
+          <div class="fc-card-side fc-card-back">
+            <div class="fc-card-label">Resposta</div>
+            <div class="fc-card-text">${card.back}</div>
+          </div>
+        </div>
+      </div>
+      ${!flipped ? `
+        <button class="btn btn-primary btn-full fc-flip-btn" id="fcFlip">Ver resposta</button>
+      ` : `
+        <div class="fc-rating">
+          <div class="fc-rating-label">Como foi?</div>
+          <div class="fc-rating-btns">
+            <button class="btn fc-btn-hard" data-rate="1">😅 Difícil</button>
+            <button class="btn fc-btn-ok" data-rate="2">🙂 Ok</button>
+            <button class="btn fc-btn-easy" data-rate="3">😊 Fácil</button>
+          </div>
+        </div>
+      `}
+    </div>
+  `
+
+  document.getElementById('fcReviewBack').onclick = () => {
+    state.flashcards.screen = 'menu'
+    state.flashcards.reviewIdx = 0
+    state.flashcards.flipped = false
+    renderFlashcards(container)
+  }
+  document.getElementById('fcFlip')?.addEventListener('click', () => {
+    state.flashcards.flipped = true
+    renderFlashcardsReview(container)
+  })
+  container.querySelectorAll('[data-rate]').forEach(btn => {
+    btn.onclick = () => {
+      const rating = parseInt(btn.dataset.rate)
+      const deck = loadFlashcardDeck()
+      const i = deck.findIndex(c => c.id === card.id)
+      if (i !== -1) deck[i] = rateCard(card, rating)
+      saveFlashcardDeck(deck)
+      state.flashcards.reviewIdx++
+      state.flashcards.flipped = false
+      renderFlashcardsReview(container)
+    }
+  })
+}
+
 // ===== UPGRADE MODAL =====
 function renderUpgradeModal() {
   const existing = document.querySelector('.modal-overlay')
@@ -1767,6 +2094,7 @@ async function init() {
       await loadUserData()
       state.questaoHoje = null
       renderApp()
+      checkDailyNotification()
     } catch {
       localStorage.removeItem('decifra_token')
       renderAuth('login')

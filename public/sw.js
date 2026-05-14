@@ -28,3 +28,23 @@ self.addEventListener('fetch', e => {
     })
   )
 })
+
+self.addEventListener('message', e => {
+  if (e.data?.type === 'NOTIFY') {
+    self.registration.showNotification(e.data.title, {
+      body: e.data.body,
+      icon: '/icons/favicon.svg',
+      tag: 'decifra-daily',
+      renotify: false,
+    })
+  }
+})
+
+self.addEventListener('notificationclick', e => {
+  e.notification.close()
+  e.waitUntil(clients.matchAll({ type: 'window' }).then(list => {
+    const existing = list.find(w => w.url.includes('/app'))
+    if (existing) return existing.focus()
+    return clients.openWindow('/app')
+  }))
+})
