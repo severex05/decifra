@@ -41,7 +41,7 @@ const state = {
   plan: 'free',
   trialEnd: null,
   tab: 'inicio',
-  tutor: { messages: [], subject: 'matematica', loading: false, used: 0, limit: 5 },
+  tutor: { chatsBySubject: {}, subject: 'matematica', loading: false, used: 0, limit: 5 },
   simulado: { screen: 'menu', type: null, questions: [], current: 0, answers: [], timeLeft: 0, timer: null, score: null, loading: false },
   diag: { screen: 'intro', questions: [], current: 0, answers: [] },
   progresso: { totalQuestions: 0, correct: 0, streak: 0, subjects: {}, simuladosDone: 0 },
@@ -209,7 +209,7 @@ const ONBOARDING_STEPS = [
     icon: '🎯',
     title: 'Qual é a sua prova?',
     text: 'Vamos personalizar sua experiência com base no seu objetivo.',
-    options: ['ENEM 2025', 'Vestibular (FUVEST/UNICAMP/outros)', 'Concurso Público Federal', 'Concurso Público Estadual', 'Ainda não decidi'],
+    options: ['ENEM 2026', 'Vestibular (FUVEST/UNICAMP/outros)', 'Concurso Público Federal', 'Concurso Público Estadual', 'Concurso Público Municipal', 'Militar (ESPCEX/AFA/outros)', 'Ainda não decidi'],
     key: 'prova'
   },
   {
@@ -223,7 +223,7 @@ const ONBOARDING_STEPS = [
     icon: '🧠',
     title: 'Qual matéria você mais precisa melhorar?',
     text: 'Vamos focar mais nessa área no seu plano de estudo.',
-    options: ['Matemática', 'Português', 'Ciências da Natureza', 'Ciências Humanas', 'Todas precisam melhorar'],
+    options: ['Matemática', 'Português / Redação', 'Ciências da Natureza', 'Ciências Humanas', 'Inglês / Língua Estrangeira', 'Raciocínio Lógico', 'Todas precisam melhorar'],
     key: 'fraqueza'
   },
 ]
@@ -533,7 +533,8 @@ function renderTutor(container) {
   })
 
   const messagesDiv = document.getElementById('tutorMessages')
-  if (state.tutor.messages.length === 0) {
+  const subjMsgsNow = state.tutor.chatsBySubject[state.tutor.subject] || []
+  if (subjMsgsNow.length === 0) {
     const subj = SUBJECTS.find(s => s.id === state.tutor.subject)
     messagesDiv.innerHTML = `
       <div class="msg msg-tutor">
@@ -563,7 +564,8 @@ function renderTutor(container) {
 }
 
 function renderMessages(container) {
-  container.innerHTML = state.tutor.messages.map(m => `
+  const msgs = state.tutor.chatsBySubject[state.tutor.subject] || []
+  container.innerHTML = msgs.map(m => `
     <div class="msg ${m.role === 'user' ? 'msg-user' : 'msg-tutor'}">${m.content.replace(/\n/g, '<br>')}</div>
   `).join('')
   if (state.tutor.loading) {
@@ -582,7 +584,11 @@ async function sendTutorMessage() {
     return
   }
 
-  state.tutor.messages.push({ role: 'user', content: text })
+  const subj = state.tutor.subject
+  if (!state.tutor.chatsBySubject[subj]) state.tutor.chatsBySubject[subj] = []
+  const subjMsgs = state.tutor.chatsBySubject[subj]
+
+  subjMsgs.push({ role: 'user', content: text })
   state.tutor.loading = true
   state.tutor.used++
   if (input) { input.value = ''; input.style.height = 'auto' }
@@ -592,12 +598,12 @@ async function sendTutorMessage() {
 
   try {
     const data = await api('/api/tutor/chat', {
-      messages: state.tutor.messages,
-      subject: state.tutor.subject,
+      messages: subjMsgs,
+      subject: subj,
     })
-    state.tutor.messages.push({ role: 'assistant', content: data.reply })
+    subjMsgs.push({ role: 'assistant', content: data.reply })
   } catch (err) {
-    state.tutor.messages.push({ role: 'assistant', content: 'Desculpe, ocorreu um erro. Tente novamente.' })
+    subjMsgs.push({ role: 'assistant', content: 'Desculpe, ocorreu um erro. Tente novamente.' })
   }
 
   state.tutor.loading = false
