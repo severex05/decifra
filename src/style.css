@@ -1254,3 +1254,20 @@ body {
 .rank-name { flex: 1; font-size: 0.875rem; font-weight: 600; }
 .rank-xp { font-size: 0.8rem; font-weight: 700; color: var(--primary); }
 .rank-streak { font-size: 0.8rem; color: var(--text2); margin-left: 0.25rem; }
+
+/* ===== METAS ===== */
+.metas-list { display: flex; flex-direction: column; gap: 0.3rem; }
+.metas-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+.metas-row:last-child { border-bottom: none; }
+.metas-subj { flex: 1; font-weight: 600; }
+.metas-atual { min-width: 2.5rem; text-align: right; font-weight: 700; }
+.metas-sep { color: var(--text3); font-size: 0.75rem; }
+.metas-meta { min-width: 2.5rem; text-align: left; font-weight: 600; }
+
+/* ===== RESULTADO BONITO ===== */
+.results-type-label { font-size: 0.75rem; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.5rem; }
+.results-msg { font-size: 1rem; font-weight: 700; margin-bottom: 0.5rem; }
+.results-nota-enem { color: var(--text2); font-size: 0.875rem; margin-bottom: 1rem; }
+.results-subj-title { font-size: 0.75rem; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.5rem; }
+.results-actions { display: flex; gap: 0.75rem; margin-top: 1.5rem; }
+.results-actions .btn { flex: 1; }

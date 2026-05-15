@@ -911,6 +911,7 @@ async function sendTutorMessage() {
 function renderSimulados(container) {
   if (state.simulado.screen === 'quiz') { renderQuiz(container); return }
   if (state.simulado.screen === 'result') { renderResults(container); return }
+  if (state.simulado.screen === 'gabarito') { renderGabarito(container); return }
 
   container.innerHTML = `
     <div class="simulado-screen">
@@ -1180,12 +1181,22 @@ async function finishSimulado() {
   const { questions, answers } = state.simulado
   let correct = 0
   const bySubject = {}
+  const wrongQuestions = []
+
   questions.forEach((q, i) => {
     const isCorrect = answers[i] === q.answerIndex
     if (isCorrect) correct++
     if (!bySubject[q.subject]) bySubject[q.subject] = { total: 0, correct: 0 }
     bySubject[q.subject].total++
     if (isCorrect) bySubject[q.subject].correct++
+    if (!isCorrect && answers[i] !== undefined && answers[i] !== -1) {
+      wrongQuestions.push({
+        id: q.id, subject: q.subject,
+        question: q.question.length > 300 ? q.question.slice(0, 300) + '...' : q.question,
+        options: q.options, answerIndex: q.answerIndex,
+        explanation: q.explanation, date: new Date().toISOString()
+      })
+    }
   })
 
   state.simulado.score = { correct, total: questions.length, bySubject }
@@ -1197,7 +1208,7 @@ async function finishSimulado() {
     pct: Math.round((correct / questions.length) * 100)
   })
   recordStudyToday()
-  api('/api/simulado/finish', { type: state.simulado.type, score: state.simulado.score })
+  api('/api/simulado/finish', { type: state.simulado.type, score: state.simulado.score, wrongQuestions })
     .then(res => {
       if (res?.xpGain) state.xp = (state.xp || 0) + res.xpGain
       checkAndShowNewBadges()
@@ -1212,56 +1223,64 @@ function renderResults(container) {
 
   const pct = Math.round((score.correct / score.total) * 100)
   const nota = Math.round((score.correct / score.total) * 1000)
+  const scoreColor = pct >= 70 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444'
+  const scoreMsg = pct >= 70 ? 'Ótimo resultado! 🎉' : pct >= 50 ? 'Bom esforço! Pode melhorar.' : 'Continue praticando! 💪'
 
+  const typeNames = { mini: 'Mini-simulado', enem: 'ENEM', enem_completo: 'ENEM Completo', vestibular: 'Vestibular', concurso: 'Concurso', ia: 'Simulado IA ✨', diagnostico: 'Diagnóstico' }
+  const typeName = typeNames[state.simulado.type] || 'Simulado'
+
+  const hasMultiSubj = Object.keys(score.bySubject).length > 1
   const subjRows = Object.entries(score.bySubject).map(([subj, data]) => {
     const p = Math.round((data.correct / data.total) * 100)
     const color = p >= 70 ? '#10b981' : p >= 50 ? '#f59e0b' : '#ef4444'
+    const s = SUBJECTS.find(x => x.id === subj)
     return `
       <div class="results-subj-item">
-        <span>${subjectLabel(subj)}</span>
+        <span style="font-size:0.85rem">${s?.emoji || ''} ${subjectLabel(subj)}</span>
         <div class="subj-bar-container"><div class="subj-bar-fill" style="width:${p}%;background:${color}"></div></div>
-        <span style="font-weight:700;color:${color}">${p}%</span>
+        <span style="font-weight:700;color:${color};font-size:0.85rem">${data.correct}/${data.total}</span>
       </div>
     `
   }).join('')
 
-  const scoreColor = pct >= 70 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444'
+  const wrongCount = state.simulado.questions.filter((q, i) => {
+    const a = state.simulado.answers[i]
+    return a !== undefined && a !== -1 && a !== q.answerIndex
+  }).length
 
   container.innerHTML = `
     <div class="results-screen">
-      <div style="font-size:0.8rem;color:var(--text3);margin-bottom:0.5rem;text-transform:uppercase;letter-spacing:0.5px;">Resultado do simulado</div>
+      <div class="results-type-label">${typeName}</div>
       <svg class="results-ring" viewBox="0 0 120 120">
         <circle cx="60" cy="60" r="50" fill="none" stroke="var(--surface2)" stroke-width="10"/>
         <circle cx="60" cy="60" r="50" fill="none" stroke="${scoreColor}" stroke-width="10"
           stroke-dasharray="${2 * Math.PI * 50}"
           stroke-dashoffset="${2 * Math.PI * 50 * (1 - pct/100)}"
           stroke-linecap="round" transform="rotate(-90 60 60)"/>
-        <text x="60" y="55" text-anchor="middle" fill="white" font-size="20" font-weight="800">${pct}%</text>
-        <text x="60" y="72" text-anchor="middle" fill="var(--text2)" font-size="10">${score.correct}/${score.total}</text>
+        <text x="60" y="52" text-anchor="middle" fill="white" font-size="22" font-weight="800">${pct}%</text>
+        <text x="60" y="68" text-anchor="middle" fill="var(--text2)" font-size="10">${score.correct} de ${score.total}</text>
       </svg>
-      ${state.simulado.type === 'enem' ? `<div style="color:var(--text2);font-size:0.875rem;margin-bottom:1rem">Nota estimada ENEM: <strong style="color:${scoreColor}">${nota}</strong></div>` : ''}
-      ${Object.keys(score.bySubject).length > 1 ? `
+      <div class="results-msg" style="color:${scoreColor}">${scoreMsg}</div>
+      ${['enem','enem_completo'].includes(state.simulado.type) ? `<div class="results-nota-enem">Nota ENEM estimada: <strong style="color:${scoreColor}">${nota} pontos</strong></div>` : ''}
+      ${hasMultiSubj ? `
         <div class="results-subjects">
-          <div style="font-size:0.8rem;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:0.5rem;">Por matéria</div>
+          <div class="results-subj-title">Por matéria</div>
           ${subjRows}
         </div>` : ''}
-      <div style="display:flex;gap:0.75rem;margin-top:1.5rem;">
-        <button class="btn btn-outline" id="resBack" style="flex:1">Novo simulado</button>
-        <button class="btn btn-primary" id="resReview" style="flex:1">Ver gabarito</button>
+      <div class="results-actions">
+        <button class="btn btn-outline" id="resBack">🔄 Novo simulado</button>
+        <button class="btn btn-primary" id="resGabarito">📋 Ver gabarito</button>
       </div>
-      ${score.correct < score.total ? `<button class="btn btn-outline btn-full" id="resSaveFlash" style="margin-top:0.75rem">🃏 Salvar erros como flashcards</button>` : ''}
+      ${wrongCount > 0 ? `<button class="btn btn-outline btn-full" id="resSaveFlash" style="margin-top:0.75rem">🃏 Salvar ${wrongCount} ${wrongCount === 1 ? 'erro' : 'erros'} como flashcards</button>` : ''}
       <button class="btn btn-ghost btn-full" id="resShare" style="margin-top:0.5rem">📤 Compartilhar resultado</button>
     </div>
   `
 
   document.getElementById('resBack').onclick = () => { state.simulado.screen = 'menu'; renderTab('simulados') }
-  document.getElementById('resReview').onclick = () => { state.simulado.screen = 'quiz'; state.simulado.current = 0; renderTab('simulados') }
+  document.getElementById('resGabarito').onclick = () => { state.simulado.screen = 'gabarito'; renderTab('simulados') }
   document.getElementById('resShare').onclick = () => {
-    const typeNames = { mini: 'Mini-simulado', enem: 'ENEM', vestibular: 'Vestibular', concurso: 'Concurso', ia: 'Simulado IA' }
-    const typeName = typeNames[state.simulado.type] || 'Simulado'
     shareResult(`Acertei ${score.correct}/${score.total} (${pct}%) no ${typeName} do Decifra! 📚 Estude para o ENEM grátis em`)
   }
-
   document.getElementById('resSaveFlash')?.addEventListener('click', () => {
     const { questions, answers } = state.simulado
     const today = new Date().toISOString().slice(0, 10)
@@ -1280,6 +1299,54 @@ function renderResults(container) {
     saveFlashcardDeck(deck)
     toast(`${wrongCards.length} erros salvos como flashcards! 🃏`, 'success')
   })
+}
+
+function renderGabarito(container) {
+  const { questions, answers, score } = state.simulado
+  if (!questions.length) { state.simulado.screen = 'menu'; renderTab('simulados'); return }
+
+  const pct = score ? Math.round((score.correct / score.total) * 100) : 0
+  const scoreColor = pct >= 70 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444'
+
+  const rows = questions.map((q, i) => {
+    const answered = answers[i] !== undefined && answers[i] !== -1
+    const isCorrect = answered && answers[i] === q.answerIndex
+    const s = SUBJECTS.find(x => x.id === q.subject)
+    const opts = q.options.map((opt, j) => {
+      let bg = 'transparent'; let border = 'var(--border)'; let color = 'var(--text2)'
+      if (j === q.answerIndex) { bg = 'rgba(16,185,129,0.12)'; border = '#10b981'; color = '#10b981' }
+      if (answered && answers[i] === j && j !== q.answerIndex) { bg = 'rgba(239,68,68,0.12)'; border = '#ef4444'; color = '#ef4444' }
+      return `<div style="padding:0.4rem 0.6rem;border-radius:6px;border:1px solid ${border};background:${bg};color:${color};font-size:0.8rem;margin-bottom:0.25rem">
+        <span style="font-weight:700;margin-right:0.4rem">${String.fromCharCode(65+j)}</span>${opt}
+        ${j === q.answerIndex ? ' ✅' : (answered && answers[i] === j ? ' ❌' : '')}
+      </div>`
+    }).join('')
+    return `
+      <div style="border:1px solid ${isCorrect ? 'rgba(16,185,129,0.3)' : answered ? 'rgba(239,68,68,0.3)' : 'var(--border)'};border-radius:12px;padding:1rem;margin-bottom:0.75rem;background:var(--surface)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
+          <span style="font-size:0.75rem;color:${s?.color || 'var(--primary)'};font-weight:600">${s?.emoji || ''} ${subjectLabel(q.subject)}</span>
+          <span style="font-size:0.75rem;font-weight:700;color:${isCorrect ? '#10b981' : answered ? '#ef4444' : 'var(--text3)'}">${!answered ? '—' : isCorrect ? 'Correto ✅' : 'Errado ❌'}</span>
+        </div>
+        <div style="font-size:0.85rem;line-height:1.5;margin-bottom:0.75rem;color:var(--text)">${q.question}</div>
+        <div>${opts}</div>
+        ${q.explanation ? `<div style="margin-top:0.5rem;padding:0.5rem;background:rgba(59,130,246,0.08);border-radius:8px;font-size:0.8rem;color:var(--text2);line-height:1.5"><strong style="color:var(--primary)">Explicação:</strong> ${q.explanation}</div>` : ''}
+      </div>
+    `
+  }).join('')
+
+  container.innerHTML = `
+    <div class="results-screen" style="text-align:left">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+        <button class="btn btn-ghost btn-sm" id="gabBack">← Resultado</button>
+        <span style="font-size:0.85rem;color:${scoreColor};font-weight:700">${score?.correct}/${score?.total} (${pct}%)</span>
+      </div>
+      <div style="font-weight:700;font-size:1rem;margin-bottom:1rem">Gabarito completo</div>
+      ${rows}
+      <button class="btn btn-outline btn-full" id="gabNewSim" style="margin-top:0.5rem">Novo simulado</button>
+    </div>
+  `
+  document.getElementById('gabBack').onclick = () => { state.simulado.screen = 'result'; renderTab('simulados') }
+  document.getElementById('gabNewSim').onclick = () => { state.simulado.screen = 'menu'; renderTab('simulados') }
 }
 
 // ===== TAB: PROGRESSO =====
@@ -1370,6 +1437,19 @@ function renderProgresso(container) {
         <div class="subj-performance">${subjRows}</div>
       </div>
 
+      <div class="card" id="metasCard">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+          Metas por matéria
+          <button class="btn btn-ghost btn-sm" id="metasEditBtn" style="font-size:0.75rem">Editar</button>
+        </div>
+        <div id="metasContent" style="color:var(--text3);font-size:0.85rem;text-align:center;padding:0.5rem 0">Carregando...</div>
+      </div>
+
+      <div class="card" id="errosCard">
+        <div class="card-title">❌ Revisão de Erros</div>
+        <div id="errosContent" style="color:var(--text3);font-size:0.85rem;text-align:center;padding:0.5rem 0">Carregando...</div>
+      </div>
+
       <div class="card" id="histCard">
         <div class="card-title">Histórico de Simulados</div>
         <div id="histContent" style="color:var(--text3);font-size:0.85rem;text-align:center;padding:0.5rem 0">Carregando...</div>
@@ -1382,6 +1462,8 @@ function renderProgresso(container) {
     </div>
   `
 
+  loadMetasSection()
+  loadErrosSection()
   loadHistoricoSection()
   loadRankingSection()
 }
@@ -1428,6 +1510,129 @@ async function loadRankingSection() {
   } catch {
     const el2 = document.getElementById('rankContent')
     if (el2) el2.textContent = 'Erro ao carregar ranking.'
+  }
+}
+
+async function loadMetasSection() {
+  const el = document.getElementById('metasContent')
+  if (!el) return
+  try {
+    const token = localStorage.getItem('decifra_token')
+    const r = await fetch(`${API}/api/metas`, { headers: { Authorization: `Bearer ${token}` } })
+    const data = await r.json()
+    const metas = data.metas || {}
+    const p = state.progresso
+
+    const rows = SUBJECTS.map(s => {
+      const perf = p.subjects?.[s.id]
+      const atual = perf?.total > 0 ? Math.round((perf.correct / perf.total) * 100) : null
+      const meta = metas[s.id]
+      const cor = atual === null ? 'var(--text3)' : meta ? (atual >= meta ? '#10b981' : atual >= meta * 0.8 ? '#f59e0b' : '#ef4444') : 'var(--text2)'
+      return `<div class="metas-row">
+        <span class="metas-subj">${s.emoji} ${s.label.split(' ')[0]}</span>
+        <span class="metas-atual" style="color:${cor}">${atual !== null ? atual + '%' : '—'}</span>
+        <span class="metas-sep">→</span>
+        <span class="metas-meta" style="color:${meta ? 'var(--primary)' : 'var(--text3)'}">${meta ? meta + '%' : '—'}</span>
+      </div>`
+    }).join('')
+
+    el.innerHTML = `<div style="font-size:0.75rem;color:var(--text3);margin-bottom:0.5rem">Atual → Meta</div><div class="metas-list">${rows}</div>`
+
+    const editBtn = document.getElementById('metasEditBtn')
+    if (editBtn) editBtn.onclick = () => showMetasModal(metas)
+  } catch {
+    const el2 = document.getElementById('metasContent')
+    if (el2) el2.textContent = 'Erro ao carregar metas.'
+  }
+}
+
+function showMetasModal(currentMetas) {
+  const existing = document.querySelector('.metas-modal-overlay')
+  if (existing) existing.remove()
+  const overlay = el('div', 'badge-unlock-overlay')
+  const rows = SUBJECTS.map(s => `
+    <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
+      <span style="flex:1;font-size:0.875rem">${s.emoji} ${s.label.split(' ')[0]}</span>
+      <input type="number" min="0" max="100" class="form-input" style="width:70px;text-align:center;padding:0.35rem" data-subject="${s.id}" value="${currentMetas[s.id] || ''}" placeholder="—">
+      <span style="font-size:0.8rem;color:var(--text3)">%</span>
+    </div>
+  `).join('')
+  overlay.innerHTML = `<div class="badge-unlock-card" style="max-height:80vh;overflow-y:auto">
+    <div class="badge-unlock-title" style="margin-bottom:0.25rem">Definir metas</div>
+    <div style="color:var(--text2);font-size:0.8rem;margin-bottom:1rem">Porcentagem de acertos alvo por matéria</div>
+    ${rows}
+    <button class="btn btn-primary" id="metasSave" style="margin-top:1rem;width:100%">Salvar metas</button>
+    <button class="btn btn-ghost" id="metasCancel" style="margin-top:0.5rem;width:100%">Cancelar</button>
+  </div>`
+  document.body.appendChild(overlay)
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove() }
+  document.getElementById('metasCancel').onclick = () => overlay.remove()
+  document.getElementById('metasSave').onclick = async () => {
+    const token = localStorage.getItem('decifra_token')
+    const inputs = overlay.querySelectorAll('[data-subject]')
+    for (const input of inputs) {
+      const subject = input.dataset.subject
+      const val = input.value.trim()
+      const meta = val ? Math.min(100, Math.max(0, parseInt(val))) : null
+      try {
+        await fetch(`${API}/api/metas`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ subject, meta })
+        })
+      } catch {}
+    }
+    overlay.remove()
+    toast('Metas salvas! 🎯', 'success')
+    loadMetasSection()
+  }
+}
+
+async function loadErrosSection() {
+  const el = document.getElementById('errosContent')
+  if (!el) return
+  try {
+    const token = localStorage.getItem('decifra_token')
+    const r = await fetch(`${API}/api/erros`, { headers: { Authorization: `Bearer ${token}` } })
+    const data = await r.json()
+    const erros = data.erros || []
+    if (!erros.length) { el.textContent = 'Nenhum erro registrado ainda. Complete simulados para ver seus erros aqui.'; return }
+
+    const grouped = {}
+    erros.forEach(e => {
+      if (!grouped[e.subject]) grouped[e.subject] = []
+      grouped[e.subject].push(e)
+    })
+
+    const html = Object.entries(grouped).slice(0, 5).map(([subj, qs]) => {
+      const s = SUBJECTS.find(x => x.id === subj)
+      return `<div style="margin-bottom:0.75rem">
+        <div style="font-size:0.75rem;font-weight:700;color:${s?.color || 'var(--primary)'};margin-bottom:0.25rem">${s?.emoji || ''} ${subjectLabel(subj)} (${qs.length})</div>
+        ${qs.slice(0, 2).map(q => `<div style="font-size:0.8rem;color:var(--text2);padding:0.4rem 0.6rem;background:var(--surface2);border-radius:6px;margin-bottom:0.25rem;line-height:1.4">${q.question.slice(0, 100)}${q.question.length > 100 ? '...' : ''}</div>`).join('')}
+      </div>`
+    }).join('')
+
+    el.innerHTML = `<div style="font-size:0.75rem;color:var(--text3);margin-bottom:0.5rem">${erros.length} questões erradas salvas</div>${html}
+      <button class="btn btn-outline btn-full" id="errosSaveFlash" style="margin-top:0.5rem;font-size:0.8rem">🃏 Salvar todos como flashcards</button>`
+
+    document.getElementById('errosSaveFlash')?.addEventListener('click', () => {
+      const today = new Date().toISOString().slice(0, 10)
+      const deck = loadFlashcardDeck()
+      erros.forEach(q => {
+        deck.push({
+          id: `err_${q.id}_${Date.now()}`,
+          subject: q.subject,
+          front: q.question.length > 250 ? q.question.slice(0, 250) + '...' : q.question,
+          back: `✅ ${q.options[q.answerIndex]}\n\n${q.explanation || ''}`,
+          interval: 1, ease: 2.5, nextReview: today, reps: 0, createdAt: today
+        })
+      })
+      saveFlashcardDeck(deck)
+      toast(`${erros.length} erros salvos como flashcards! 🃏`, 'success')
+    })
+  } catch {
+    const el2 = document.getElementById('errosContent')
+    if (el2) el2.textContent = 'Erro ao carregar revisão de erros.'
   }
 }
 
@@ -1841,7 +2046,33 @@ function renderPlanoSemana(container) {
 }
 
 // ===== CORREÇÃO DE REDAÇÃO =====
+const TEMAS_ENEM = [
+  'Caminhos para combater o racismo no Brasil',
+  'Desafios para a valorização de comunidades e povos tradicionais no Brasil',
+  'O estigma associado às doenças mentais na sociedade brasileira',
+  'Manipulação do comportamento do usuário pelo controle de dados na internet',
+  'Democratização do acesso ao cinema no Brasil',
+  'Invisibilidade e registro civil: direitos da pessoa em situação de rua',
+  'A persistência da violência contra a mulher na sociedade brasileira',
+  'Desafios para a formação educacional de surdos no Brasil',
+  'A questão do tráfico de pessoas no Brasil',
+  'Publicidade infantil em questão no Brasil',
+  'O movimento imigratório para o Brasil no século XXI',
+  'Vício em redes sociais na era digital',
+  'Os impactos das fake news nas eleições democráticas',
+  'Desigualdade social e acesso à educação no Brasil',
+  'Mudanças climáticas e o papel da juventude brasileira',
+  'Saúde mental dos jovens em tempos de pandemia',
+  'A importância da leitura na formação do cidadão brasileiro',
+  'Violência doméstica e proteção às vítimas no Brasil',
+  'Segurança alimentar e combate à fome no Brasil',
+  'Os desafios da inclusão digital no Brasil',
+  'Impacto da Inteligência Artificial no mercado de trabalho',
+  'Preconceito linguístico e diversidade cultural no Brasil',
+]
+
 function renderRedacao(container) {
+  const temaOptions = TEMAS_ENEM.map(t => `<option value="${t}">${t}</option>`).join('')
   container.innerHTML = `
     <div class="plano-screen">
       <button class="btn btn-ghost btn-sm" id="redacaoBack" style="margin-bottom:1rem">← Voltar</button>
@@ -1857,8 +2088,13 @@ function renderRedacao(container) {
       </div>
       <div class="card" style="margin-bottom:1rem">
         <div class="form-group" style="margin-bottom:0.75rem">
-          <label class="form-label">Tema da redação (opcional)</label>
-          <input type="text" class="form-input" id="redacaoTema" placeholder="Ex: Desafios da inclusão digital no Brasil">
+          <label class="form-label">Tema da redação</label>
+          <select class="form-input" id="redacaoTemaSelect" style="margin-bottom:0.5rem">
+            <option value="">— Selecione um tema do ENEM —</option>
+            ${temaOptions}
+            <option value="__custom__">Outro tema (digitar)</option>
+          </select>
+          <input type="text" class="form-input" id="redacaoTema" placeholder="Digite o tema da redação..." style="display:none">
         </div>
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label">Texto da redação</label>
@@ -1884,6 +2120,13 @@ function renderRedacao(container) {
   `
   document.getElementById('redacaoBack').onclick = () => switchTab('mais')
 
+  const select = document.getElementById('redacaoTemaSelect')
+  const temaInput = document.getElementById('redacaoTema')
+  select.addEventListener('change', () => {
+    temaInput.style.display = select.value === '__custom__' ? 'block' : 'none'
+    if (select.value !== '__custom__') temaInput.value = ''
+  })
+
   const textarea = document.getElementById('redacaoTexto')
   const charCount = document.getElementById('redacaoCharCount')
   textarea.addEventListener('input', () => {
@@ -1896,7 +2139,9 @@ function renderRedacao(container) {
 
 async function submitRedacao(container) {
   const texto = document.getElementById('redacaoTexto')?.value.trim()
-  const tema = document.getElementById('redacaoTema')?.value.trim()
+  const sel = document.getElementById('redacaoTemaSelect')
+  const temaInput = document.getElementById('redacaoTema')
+  const tema = sel?.value === '__custom__' ? temaInput?.value.trim() : (sel?.value || '')
   if (!texto || texto.length < 100) { toast('Mínimo 100 caracteres para corrigir.', 'error'); return }
 
   const btn = document.getElementById('redacaoSubmit')
