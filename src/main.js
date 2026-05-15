@@ -945,6 +945,18 @@ function renderSimulados(container) {
           </div>
           <div class="simulado-type-icon">📝</div>
         </div>
+        <div class="simulado-type-card" data-type="enem_completo">
+          <div class="simulado-type-info">
+            <h3>ENEM Completo 🏆</h3>
+            <p>45 questões · Distribuição oficial do ENEM</p>
+            <div class="simulado-meta">
+              <span class="meta-chip">⏱ 5h30</span>
+              <span class="meta-chip">45 questões</span>
+              ${isPro() ? '' : '<span class="meta-chip" style="color:var(--primary)">Pro</span>'}
+            </div>
+          </div>
+          <div class="simulado-type-icon">📋</div>
+        </div>
         <div class="simulado-type-card" data-type="vestibular">
           <div class="simulado-type-info">
             <h3>Vestibular</h3>
@@ -985,7 +997,7 @@ function renderSimulados(container) {
       ${(() => {
         const hist = loadSimuladoHistory()
         if (!hist.length) return ''
-        const typeNames = { mini: 'Mini', enem: 'ENEM', vestibular: 'Vestibular', concurso: 'Concurso', ia: 'IA ✨' }
+        const typeNames = { mini: 'Mini', enem: 'ENEM', enem_completo: 'ENEM Completo', vestibular: 'Vestibular', concurso: 'Concurso', ia: 'IA ✨' }
         const items = hist.slice(0, 5).map(h => {
           const color = h.pct >= 70 ? '#10b981' : h.pct >= 50 ? '#f59e0b' : '#ef4444'
           const d = new Date(h.date)
@@ -1357,8 +1369,66 @@ function renderProgresso(container) {
         <div class="card-title">Por matéria</div>
         <div class="subj-performance">${subjRows}</div>
       </div>
+
+      <div class="card" id="histCard">
+        <div class="card-title">Histórico de Simulados</div>
+        <div id="histContent" style="color:var(--text3);font-size:0.85rem;text-align:center;padding:0.5rem 0">Carregando...</div>
+      </div>
+
+      <div class="card" id="rankCard">
+        <div class="card-title">🏆 Ranking Global</div>
+        <div id="rankContent" style="color:var(--text3);font-size:0.85rem;text-align:center;padding:0.5rem 0">Carregando...</div>
+      </div>
     </div>
   `
+
+  loadHistoricoSection()
+  loadRankingSection()
+}
+
+async function loadHistoricoSection() {
+  const el = document.getElementById('histContent')
+  if (!el) return
+  try {
+    const token = localStorage.getItem('decifra_token')
+    const r = await fetch(`${API}/api/stats/historico`, { headers: { Authorization: `Bearer ${token}` } })
+    const data = await r.json()
+    const hist = data.history || []
+    if (!hist.length) { el.textContent = 'Nenhum simulado finalizado ainda.'; return }
+    const typeNames = { mini: 'Mini', enem: 'ENEM', enem_completo: 'ENEM Completo', vestibular: 'Vestibular', concurso: 'Concurso', ia: 'IA ✨', diagnostico: 'Diagnóstico' }
+    el.innerHTML = `<div class="history-list">${hist.slice(0, 10).map(h => {
+      const pct = h.score?.total > 0 ? Math.round((h.score.correct / h.score.total) * 100) : 0
+      const color = pct >= 70 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444'
+      const d = new Date(h.date)
+      const dateStr = d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+      return `<div class="history-item"><span class="history-type">${typeNames[h.type] || h.type}</span><span class="history-date" style="flex:1;margin-left:0.5rem">${dateStr}</span><span class="history-pct" style="color:${color}">${h.score?.correct || 0}/${h.score?.total || 0} (${pct}%)</span></div>`
+    }).join('')}</div>`
+  } catch {
+    const el2 = document.getElementById('histContent')
+    if (el2) el2.textContent = 'Erro ao carregar histórico.'
+  }
+}
+
+async function loadRankingSection() {
+  const el = document.getElementById('rankContent')
+  if (!el) return
+  try {
+    const token = localStorage.getItem('decifra_token')
+    const r = await fetch(`${API}/api/ranking`, { headers: { Authorization: `Bearer ${token}` } })
+    const data = await r.json()
+    const ranking = data.ranking || []
+    if (!ranking.length) { el.textContent = 'Nenhum usuário no ranking ainda.'; return }
+    const currentUser = JSON.parse(localStorage.getItem('decifra_user') || '{}')
+    const currentName = currentUser?.name?.split(' ')[0] || ''
+    el.innerHTML = ranking.slice(0, 20).map(u => {
+      const medal = u.position === 1 ? '🥇' : u.position === 2 ? '🥈' : u.position === 3 ? '🥉' : `#${u.position}`
+      const isMe = u.name === currentName
+      return `<div class="rank-item ${isMe ? 'rank-me' : ''}"><span class="rank-pos">${medal}</span><span class="rank-name">${u.name}</span><span class="rank-xp">${u.xp} XP</span><span class="rank-streak">🔥${u.streak}</span></div>`
+    }).join('')
+  } catch {
+    const el2 = document.getElementById('rankContent')
+    if (el2) el2.textContent = 'Erro ao carregar ranking.'
+  }
 }
 
 // ===== TAB: MAIS =====

@@ -1245,3 +1245,12 @@ body {
 /* ===== AI FLASHCARD GENERATION ===== */
 .fc-ai-section { border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 0.5rem; }
 .fc-ai-divider { text-align: center; color: var(--text3); font-size: 0.7rem; font-weight: 700; margin-bottom: 0.75rem; padding: 0 1rem; letter-spacing: 0.5px; text-transform: uppercase; }
+
+/* ===== RANKING ===== */
+.rank-item { display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 0; border-bottom: 1px solid var(--border); }
+.rank-item:last-child { border-bottom: none; }
+.rank-item.rank-me { background: var(--primary-glow); border-radius: 8px; padding: 0.6rem 0.5rem; }
+.rank-pos { font-size: 0.9rem; font-weight: 800; min-width: 2rem; text-align: center; }
+.rank-name { flex: 1; font-size: 0.875rem; font-weight: 600; }
+.rank-xp { font-size: 0.8rem; font-weight: 700; color: var(--primary); }
+.rank-streak { font-size: 0.8rem; color: var(--text2); margin-left: 0.25rem; }
