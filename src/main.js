@@ -318,6 +318,7 @@ function renderAuth(mode = 'login') {
           <button type="submit" class="btn btn-primary btn-full" id="authSubmit">
             ${mode === 'login' ? 'Entrar' : 'Criar conta grátis'}
           </button>
+          ${mode === 'login' ? `<div style="text-align:center;margin-top:10px"><a href="#" id="forgotLink" style="color:#6b7280;font-size:13px">Esqueceu sua senha?</a></div>` : ''}
         </form>
         <div class="auth-footer">
           ${mode === 'login'
@@ -331,6 +332,7 @@ function renderAuth(mode = 'login') {
   document.getElementById('tabRegister').onclick = () => renderAuth('register')
   document.getElementById('switchAuth').onclick = e => { e.preventDefault(); renderAuth(mode === 'login' ? 'register' : 'login') }
   document.getElementById('authForm').onsubmit = e => handleAuth(e, mode)
+  document.getElementById('forgotLink')?.addEventListener('click', e => { e.preventDefault(); renderForgotPassword() })
 }
 
 async function handleAuth(e, mode) {
@@ -363,6 +365,91 @@ async function handleAuth(e, mode) {
     msg.innerHTML = `<div class="error-msg">${err.message}</div>`
     btn.disabled = false
     btn.textContent = mode === 'login' ? 'Entrar' : 'Criar conta grátis'
+  }
+}
+
+function renderForgotPassword() {
+  document.getElementById('app').innerHTML = `
+    <div class="auth-screen">
+      <div class="auth-card">
+        <div class="auth-logo">Decifra<span>.</span></div>
+        <div class="auth-tagline">Recuperar senha</div>
+        <p style="color:#9ca3af;font-size:14px;margin-bottom:20px;text-align:center">Digite seu email e enviaremos um link para redefinir sua senha.</p>
+        <div id="forgotMsg"></div>
+        <form id="forgotForm">
+          <div class="form-group">
+            <label class="form-label">Email</label>
+            <input type="email" class="form-input" id="forgotEmail" placeholder="seu@email.com" required autocomplete="email">
+          </div>
+          <button type="submit" class="btn btn-primary btn-full" id="forgotSubmit">Enviar link</button>
+        </form>
+        <div class="auth-footer"><a href="#" id="backToLogin">← Voltar para o login</a></div>
+      </div>
+    </div>
+  `
+  document.getElementById('backToLogin').onclick = e => { e.preventDefault(); renderAuth('login') }
+  document.getElementById('forgotForm').onsubmit = async e => {
+    e.preventDefault()
+    const email = document.getElementById('forgotEmail').value.trim()
+    const btn = document.getElementById('forgotSubmit')
+    const msg = document.getElementById('forgotMsg')
+    btn.disabled = true
+    btn.textContent = 'Enviando...'
+    try {
+      await api('/api/auth/forgot-password', { email })
+      msg.innerHTML = `<div class="success-msg" style="background:#064e3b;color:#6ee7b7;padding:12px;border-radius:8px;margin-bottom:16px;text-align:center">Link enviado! Verifique seu email (cheque o spam também).</div>`
+      btn.textContent = 'Enviado ✓'
+    } catch (err) {
+      msg.innerHTML = `<div class="error-msg">${err.message}</div>`
+      btn.disabled = false
+      btn.textContent = 'Enviar link'
+    }
+  }
+}
+
+function renderResetPassword(token) {
+  document.getElementById('app').innerHTML = `
+    <div class="auth-screen">
+      <div class="auth-card">
+        <div class="auth-logo">Decifra<span>.</span></div>
+        <div class="auth-tagline">Nova senha</div>
+        <div id="resetMsg"></div>
+        <form id="resetForm">
+          <div class="form-group">
+            <label class="form-label">Nova senha</label>
+            <input type="password" class="form-input" id="resetPassword" placeholder="Mínimo 6 caracteres" required minlength="6">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Confirmar senha</label>
+            <input type="password" class="form-input" id="resetConfirm" placeholder="Repita a nova senha" required>
+          </div>
+          <button type="submit" class="btn btn-primary btn-full" id="resetSubmit">Redefinir senha</button>
+        </form>
+      </div>
+    </div>
+  `
+  document.getElementById('resetForm').onsubmit = async e => {
+    e.preventDefault()
+    const password = document.getElementById('resetPassword').value
+    const confirm = document.getElementById('resetConfirm').value
+    const btn = document.getElementById('resetSubmit')
+    const msg = document.getElementById('resetMsg')
+    if (password !== confirm) {
+      msg.innerHTML = `<div class="error-msg">As senhas não coincidem.</div>`
+      return
+    }
+    btn.disabled = true
+    btn.textContent = 'Redefinindo...'
+    try {
+      await api('/api/auth/reset-password', { token, password })
+      msg.innerHTML = `<div class="success-msg" style="background:#064e3b;color:#6ee7b7;padding:12px;border-radius:8px;margin-bottom:16px;text-align:center">Senha redefinida com sucesso!</div>`
+      btn.textContent = 'Pronto ✓'
+      setTimeout(() => renderAuth('login'), 2000)
+    } catch (err) {
+      msg.innerHTML = `<div class="error-msg">${err.message}</div>`
+      btn.disabled = false
+      btn.textContent = 'Redefinir senha'
+    }
   }
 }
 
@@ -1079,13 +1166,37 @@ async function startSimulado(type) {
   }
 }
 
-function startTimer() {
+function stopTimer() {
   clearInterval(state.simulado.timer)
+  if (state.simulado._visibilityHandler) {
+    document.removeEventListener('visibilitychange', state.simulado._visibilityHandler)
+    state.simulado._visibilityHandler = null
+  }
+}
+
+function startTimer() {
+  stopTimer()
+  let hiddenAt = null
+  const handleVisibility = () => {
+    if (document.hidden) {
+      hiddenAt = Date.now()
+    } else if (hiddenAt) {
+      const elapsed = Math.floor((Date.now() - hiddenAt) / 1000)
+      state.simulado.timeLeft = Math.max(0, state.simulado.timeLeft - elapsed)
+      hiddenAt = null
+      updateTimerDisplay()
+      if (state.simulado.timeLeft <= 0) { stopTimer(); finishSimulado() }
+    }
+  }
+  state.simulado._visibilityHandler = handleVisibility
+  document.addEventListener('visibilitychange', handleVisibility)
+
   state.simulado.timer = setInterval(() => {
-    if (state.simulado.screen !== 'quiz') { clearInterval(state.simulado.timer); return }
+    if (state.simulado.screen !== 'quiz') { stopTimer(); return }
+    if (document.hidden) return
     state.simulado.timeLeft--
     updateTimerDisplay()
-    if (state.simulado.timeLeft <= 0) { clearInterval(state.simulado.timer); finishSimulado() }
+    if (state.simulado.timeLeft <= 0) { stopTimer(); finishSimulado() }
   }, 1000)
 }
 
@@ -1156,7 +1267,7 @@ function renderQuiz(container) {
   }
 
   document.getElementById('quizExit')?.addEventListener('click', () => {
-    clearInterval(state.simulado.timer)
+    stopTimer()
     state.simulado.screen = 'menu'
     renderTab('simulados')
   })
@@ -1189,7 +1300,7 @@ function answerQuiz(idx) {
 }
 
 async function finishSimulado() {
-  clearInterval(state.simulado.timer)
+  stopTimer()
   state.simulado.screen = 'result'
 
   const { questions, answers } = state.simulado
@@ -2618,6 +2729,15 @@ async function init() {
     state.deferredInstall = e
     setTimeout(() => { if (state.user) renderInstallBanner() }, 5000)
   })
+
+  // Handle password reset link (Supabase redirects with #access_token=...&type=recovery)
+  const hashParams = new URLSearchParams(window.location.hash.replace('#', ''))
+  const urlParams = new URLSearchParams(window.location.search)
+  if (urlParams.get('reset') === '1' && hashParams.get('access_token') && hashParams.get('type') === 'recovery') {
+    history.replaceState(null, '', '/app')
+    renderResetPassword(hashParams.get('access_token'))
+    return
+  }
 
   // Check existing session
   const token = localStorage.getItem('decifra_token')
