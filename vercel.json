@@ -2,6 +2,8 @@
   "routes": [
     { "src": "/app", "dest": "/app.html" },
     { "src": "/app/(.*)", "dest": "/app.html" },
+    { "src": "/privacidade", "dest": "/privacidade.html" },
+    { "src": "/termos", "dest": "/termos.html" },
     { "src": "/sw.js", "dest": "/sw.js" },
     { "src": "/(.*\\.(js|css|png|ico|json|svg|woff2?))", "dest": "/$1" },
     { "src": "/(.*)", "dest": "/index.html" }

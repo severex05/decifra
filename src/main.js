@@ -77,6 +77,13 @@ async function api(path, body, method = body ? 'POST' : 'GET') {
     body: body ? JSON.stringify(body) : undefined
   })
   const data = await res.json()
+  if (res.status === 401) {
+    localStorage.removeItem('decifra_token')
+    localStorage.removeItem('decifra_user')
+    localStorage.removeItem('decifra_plan')
+    window.location.href = '/app'
+    throw new Error('Sessão expirada. Faça login novamente.')
+  }
   if (!res.ok) throw new Error(data.error || 'Erro na requisição')
   return data
 }
@@ -202,7 +209,7 @@ function saveToRedacaoHistory(entry) {
 }
 
 function shareResult(text) {
-  const url = 'https://decifra-eight.vercel.app'
+  const url = window.location.origin
   if (navigator.share) {
     navigator.share({ title: 'Decifra', text, url }).catch(() => {})
   } else {
@@ -708,6 +715,7 @@ async function renderQuestaoHoje() {
 
 function answerQuestaoHoje(idx, q) {
   state.questaoRespondida = true
+  saveLocal('questao_respondida_' + new Date().toDateString(), true)
   const isCorrect = idx === q.answerIndex
   document.querySelectorAll('.questao-option').forEach((btn, i) => {
     btn.disabled = true
@@ -887,6 +895,7 @@ async function sendTutorMessage() {
   subjMsgs.push({ role: 'user', content: text })
   state.tutor.loading = true
   state.tutor.used++
+  localStorage.setItem('decifra_tutor_used_' + new Date().toDateString(), state.tutor.used)
   if (input) { input.value = ''; input.style.height = 'auto' }
 
   const msgs = document.getElementById('tutorMessages')
@@ -2610,6 +2619,8 @@ async function init() {
       state.plan = localStorage.getItem('decifra_plan') || 'free'
       state.progresso = loadLocal('progresso') || state.progresso
       state.plano = loadLocal('plano_cache') || null
+      state.questaoRespondida = loadLocal('questao_respondida_' + new Date().toDateString()) || false
+      state.tutor.used = parseInt(localStorage.getItem('decifra_tutor_used_' + new Date().toDateString()) || '0')
 
       app.innerHTML = `<div class="loading-screen"><div class="loading-logo">Decifra<span>.</span></div><div class="spinner"></div></div>`
 
