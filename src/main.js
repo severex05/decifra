@@ -908,10 +908,15 @@ async function sendTutorMessage() {
     })
     subjMsgs.push({ role: 'assistant', content: data.reply })
   } catch (err) {
-    subjMsgs.push({ role: 'assistant', content: 'Desculpe, ocorreu um erro. Tente novamente.' })
+    const msg = err.message?.includes('429') ? 'Limite de perguntas atingido hoje. Faça upgrade para Pro.' : 'Desculpe, ocorreu um erro. Tente novamente.'
+    subjMsgs.push({ role: 'assistant', content: msg })
   }
 
   state.tutor.loading = false
+  const chatsToSave = Object.fromEntries(
+    Object.entries(state.tutor.chatsBySubject).map(([k, msgs]) => [k, msgs.slice(-30)])
+  )
+  saveLocal('tutor_chats', chatsToSave)
   const m2 = document.getElementById('tutorMessages')
   if (m2) renderMessages(m2)
 }
@@ -1509,12 +1514,10 @@ async function loadRankingSection() {
     const data = await r.json()
     const ranking = data.ranking || []
     if (!ranking.length) { el.textContent = 'Nenhum usuário no ranking ainda.'; return }
-    const currentUser = JSON.parse(localStorage.getItem('decifra_user') || '{}')
-    const currentName = currentUser?.name?.split(' ')[0] || ''
     el.innerHTML = ranking.slice(0, 20).map(u => {
       const medal = u.position === 1 ? '🥇' : u.position === 2 ? '🥈' : u.position === 3 ? '🥉' : `#${u.position}`
-      const isMe = u.name === currentName
-      return `<div class="rank-item ${isMe ? 'rank-me' : ''}"><span class="rank-pos">${medal}</span><span class="rank-name">${u.name}</span><span class="rank-xp">${u.xp} XP</span><span class="rank-streak">🔥${u.streak}</span></div>`
+      const isMe = !!u.isMe
+      return `<div class="rank-item ${isMe ? 'rank-me' : ''}"><span class="rank-pos">${medal}</span><span class="rank-name">${u.name}${isMe ? ' (você)' : ''}</span><span class="rank-xp">${u.xp} XP</span><span class="rank-streak">🔥${u.streak}</span></div>`
     }).join('')
   } catch {
     const el2 = document.getElementById('rankContent')
@@ -1685,7 +1688,7 @@ function renderMais(container) {
           <div class="mais-icon">📋</div>
           <div class="mais-info">
             <div class="mais-label">Plano de Estudo</div>
-            <div class="mais-sub">Cronograma semanal gerado por IA</div>
+            <div class="mais-sub">Cronograma semanal personalizado</div>
           </div>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
         </div>
@@ -1958,29 +1961,37 @@ async function renderPlanoEstudo(container) {
 }
 
 function renderPlanoGerar(container) {
+  const pro = isPro()
   container.innerHTML = `
     <div class="plano-screen">
       <div class="plano-header">
         <div class="plano-icon">📋</div>
         <h2 class="plano-title">Plano de Estudo</h2>
-        <p class="plano-sub">Cronograma semanal gerado por IA com base no seu perfil e desempenho.</p>
+        <p class="plano-sub">Cronograma semanal personalizado com base no seu perfil e desempenho.</p>
         <div class="diag-bullets">
           <div class="diag-bullet">✓ Personalizado para sua prova</div>
           <div class="diag-bullet">✓ Foco nas suas matérias fracas</div>
           <div class="diag-bullet">✓ Regenere quando quiser</div>
         </div>
       </div>
-      <button class="btn btn-primary btn-full" id="gerarPlanoBtn">✨ Gerar meu plano</button>
+      ${pro
+        ? `<button class="btn btn-primary btn-full" id="gerarPlanoBtn">✨ Gerar meu plano</button>`
+        : `<div class="card" style="background:var(--primary-glow);border-color:rgba(59,130,246,0.3);text-align:center;padding:1.5rem;margin-bottom:1rem">
+            <div style="font-size:1.5rem;margin-bottom:0.5rem">⭐</div>
+            <div style="font-weight:700;margin-bottom:0.5rem">Recurso Pro</div>
+            <div style="color:var(--text2);font-size:0.875rem;margin-bottom:1rem">Plano de estudo personalizado está disponível a partir do plano Pro (7 dias grátis).</div>
+            <button class="btn btn-primary btn-full" id="gerarPlanoBtn">Ver planos Pro →</button>
+          </div>`}
       <button class="btn btn-ghost btn-full" id="planoBack" style="margin-top:0.5rem">Voltar</button>
     </div>
   `
-  document.getElementById('gerarPlanoBtn').onclick = () => gerarPlano(container)
+  document.getElementById('gerarPlanoBtn').onclick = () => pro ? gerarPlano(container) : renderUpgradeModal()
   document.getElementById('planoBack').onclick = () => switchTab('mais')
 }
 
 async function gerarPlano(container) {
   const btn = document.getElementById('gerarPlanoBtn')
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Gerando com IA...' }
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Gerando plano...' }
   try {
     const data = await api('/api/plano-estudo/generate', {})
     state.plano = data.plan
@@ -2155,7 +2166,7 @@ async function submitRedacao(container) {
 
   const btn = document.getElementById('redacaoSubmit')
   btn.disabled = true
-  btn.textContent = '⏳ Corrigindo com IA...'
+  btn.textContent = '⏳ Corrigindo redação...'
 
   try {
     const data = await api('/api/redacao/corrigir', { texto, tema: tema || undefined })
@@ -2357,7 +2368,7 @@ function renderFlashcardsNew(container) {
         <button class="btn btn-primary btn-full" id="fcSave">Salvar flashcard</button>
       </div>
       <div class="fc-ai-section">
-        <div class="fc-ai-divider">ou gere automaticamente com IA</div>
+        <div class="fc-ai-divider">ou gere automaticamente</div>
         <div style="padding: 0 1rem">
           <div class="form-group">
             <label class="form-label">Tópico para gerar com IA</label>
@@ -2621,6 +2632,7 @@ async function init() {
       state.plano = loadLocal('plano_cache') || null
       state.questaoRespondida = loadLocal('questao_respondida_' + new Date().toDateString()) || false
       state.tutor.used = parseInt(localStorage.getItem('decifra_tutor_used_' + new Date().toDateString()) || '0')
+      state.tutor.chatsBySubject = loadLocal('tutor_chats') || {}
 
       app.innerHTML = `<div class="loading-screen"><div class="loading-logo">Decifra<span>.</span></div><div class="spinner"></div></div>`
 
