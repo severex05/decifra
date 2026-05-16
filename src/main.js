@@ -98,6 +98,16 @@ function toast(msg, type = '') {
   setTimeout(() => t.remove(), 3000)
 }
 
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+    .replace(/\n/g, '<br>')
+}
+
 function subjectClass(id) { return `subj-${id}` }
 function subjectColor(id) { return SUBJECTS.find(s => s.id === id)?.color || '#3b82f6' }
 function subjectLabel(id) { return SUBJECTS.find(s => s.id === id)?.label || id }
@@ -466,10 +476,7 @@ async function loadUserData() {
 }
 
 function logout() {
-  localStorage.removeItem('decifra_token')
-  localStorage.removeItem('decifra_user')
-  localStorage.removeItem('decifra_plan')
-  localStorage.removeItem('decifra_plano_cache')
+  Object.keys(localStorage).filter(k => k.startsWith('decifra_')).forEach(k => localStorage.removeItem(k))
   state.user = null
   state.token = null
   state.plan = 'free'
@@ -957,7 +964,7 @@ async function generatePracticeQuestion(container) {
 function renderMessages(container) {
   const msgs = state.tutor.chatsBySubject[state.tutor.subject] || []
   container.innerHTML = msgs.map(m => `
-    <div class="msg ${m.role === 'user' ? 'msg-user' : 'msg-tutor'}">${m.content.replace(/\n/g, '<br>')}</div>
+    <div class="msg ${m.role === 'user' ? 'msg-user' : 'msg-tutor'}">${escapeHtml(m.content)}</div>
   `).join('')
   if (state.tutor.loading) {
     container.innerHTML += `<div class="msg msg-tutor typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>`
@@ -1000,6 +1007,8 @@ async function sendTutorMessage() {
   }
 
   state.tutor.loading = false
+  const limitBanner = document.querySelector('.free-limit-banner span')
+  if (limitBanner && !isPro()) limitBanner.textContent = `Tutor: ${state.tutor.used}/${state.tutor.limit} perguntas hoje`
   const chatsToSave = Object.fromEntries(
     Object.entries(state.tutor.chatsBySubject).map(([k, msgs]) => [k, msgs.slice(-30)])
   )
@@ -1267,6 +1276,7 @@ function renderQuiz(container) {
   }
 
   document.getElementById('quizExit')?.addEventListener('click', () => {
+    if (!confirm('Deseja sair do simulado? Seu progresso atual será perdido.')) return
     stopTimer()
     state.simulado.screen = 'menu'
     renderTab('simulados')
@@ -2727,7 +2737,7 @@ async function init() {
   window.addEventListener('beforeinstallprompt', e => {
     e.preventDefault()
     state.deferredInstall = e
-    setTimeout(() => { if (state.user) renderInstallBanner() }, 5000)
+    setTimeout(() => { if (state.user) renderInstallBanner() }, 30000)
   })
 
   // Handle password reset link (Supabase redirects with #access_token=...&type=recovery)
@@ -2738,6 +2748,9 @@ async function init() {
     renderResetPassword(hashParams.get('access_token'))
     return
   }
+
+  const stripeSuccess = urlParams.get('success') === '1'
+  if (stripeSuccess) history.replaceState(null, '', '/app')
 
   // Check existing session
   const token = localStorage.getItem('decifra_token')
@@ -2760,6 +2773,7 @@ async function init() {
       state.questaoHoje = null
       renderApp()
       checkDailyNotification()
+      if (stripeSuccess) toast('Assinatura ativada! Aproveite o Pro 🎉', 'success')
     } catch {
       localStorage.removeItem('decifra_token')
       renderAuth('login')
