@@ -3,6 +3,22 @@ const API = import.meta.env.VITE_API_URL || 'https://decifra-backend-production.
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
+// ===== ANALYTICS (PostHog) =====
+let _ph = null
+;(async () => {
+  const key = import.meta.env.VITE_POSTHOG_KEY
+  if (!key) return
+  try {
+    const { default: posthog } = await import('posthog-js')
+    posthog.init(key, { api_host: 'https://app.posthog.com', autocapture: false, capture_pageview: false })
+    _ph = posthog
+  } catch {}
+})()
+
+function track(event, props = {}) {
+  try { _ph?.capture(event, props) } catch {}
+}
+
 const SUBJECTS = [
   { id: 'matematica',  label: 'Matemática',   color: '#3b82f6', emoji: '📐' },
   { id: 'portugues',   label: 'Português',    color: '#8b5cf6', emoji: '📖' },
@@ -365,6 +381,13 @@ async function handleAuth(e, mode) {
     localStorage.setItem('decifra_token', data.token)
     localStorage.setItem('decifra_user', JSON.stringify(data.user))
     localStorage.setItem('decifra_plan', data.plan || 'free')
+    if (mode === 'register') {
+      track('signup', { plan: 'free' })
+      _ph?.identify(data.user.id, { email: data.user.email, name: data.user.name })
+    } else {
+      track('login')
+      _ph?.identify(data.user.id)
+    }
     await loadUserData()
     if (mode === 'register' && !loadLocal('onboarding_done')) {
       renderOnboarding()
@@ -1166,6 +1189,7 @@ async function startSimulado(type) {
     state.simulado.timeLeft = data.timeLimit
     state.simulado.screen = 'quiz'
     state.simulado.loading = false
+    track('simulado_start', { type })
     renderTab('simulados')
     startTimer()
   } catch (err) {
@@ -1335,6 +1359,7 @@ async function finishSimulado() {
   })
 
   state.simulado.score = { correct, total: questions.length, bySubject }
+  track('simulado_finish', { type: state.simulado.type, correct, total: questions.length, pct: Math.round(correct / questions.length * 100) })
   saveToSimuladoHistory({
     date: new Date().toISOString(),
     type: state.simulado.type,
@@ -1787,6 +1812,10 @@ function renderMais(container) {
         </div>
       </div>
 
+      <button class="btn btn-ghost btn-full" id="maisSharePerfil" style="margin-bottom:0.5rem;font-size:0.85rem">
+        🔗 Compartilhar meu perfil
+      </button>
+
       ${!isPro() ? `
       <button class="btn btn-primary btn-full" id="maisUpgrade" style="margin-bottom:1rem">
         ⭐ Ativar Pro — 7 dias grátis
@@ -1876,6 +1905,16 @@ function renderMais(container) {
     }
   })
 
+  document.getElementById('maisSharePerfil')?.addEventListener('click', () => {
+    const userId = state.user?.id || JSON.parse(localStorage.getItem('decifra_user') || '{}')?.id
+    if (!userId) return
+    const url = `${window.location.origin}/perfil/${userId}`
+    if (navigator.share) {
+      navigator.share({ title: 'Meu perfil no Decifra', text: 'Veja meu progresso no Decifra! 📚', url }).catch(() => {})
+    } else {
+      navigator.clipboard?.writeText(url).then(() => toast('Link do perfil copiado! 🔗', 'success')).catch(() => toast(url, ''))
+    }
+  })
   document.getElementById('maisUpgrade')?.addEventListener('click', () => renderUpgradeModal())
   document.getElementById('maisPortal')?.addEventListener('click', async () => {
     const btn = document.getElementById('maisPortal')
@@ -2630,6 +2669,72 @@ function renderFlashcardsReview(container) {
   })
 }
 
+// ===== PERFIL PÚBLICO =====
+async function renderPerfilPublico(userId) {
+  const app = document.getElementById('app')
+  app.innerHTML = `<div class="loading-screen"><div class="loading-logo">Decifra<span>.</span></div><div class="spinner"></div></div>`
+
+  const SUBJECTS_MAP = { matematica: { label: 'Matemática', emoji: '📐', color: '#3b82f6' }, portugues: { label: 'Português', emoji: '📖', color: '#8b5cf6' }, biologia: { label: 'Biologia', emoji: '🧬', color: '#10b981' }, quimica: { label: 'Química', emoji: '⚗️', color: '#f59e0b' }, fisica: { label: 'Física', emoji: '⚡', color: '#ef4444' }, historia: { label: 'História', emoji: '🏛️', color: '#f97316' }, geografia: { label: 'Geografia', emoji: '🌍', color: '#06b6d4' }, filosofia: { label: 'Filosofia', emoji: '🤔', color: '#a78bfa' }, ingles: { label: 'Inglês', emoji: '🌐', color: '#ec4899' } }
+
+  try {
+    const data = await fetch(`${API}/api/perfil/${userId}`).then(r => r.json())
+    if (data.error) throw new Error(data.error)
+
+    const xp = data.xp || 0
+    const level = getXpLevel(xp)
+    const pct = data.totalQuestions > 0 ? Math.round((data.correct / data.totalQuestions) * 100) : 0
+    const badges = getEarnedBadges({ totalQuestions: data.totalQuestions, correct: data.correct, streak: data.streak }, xp)
+
+    const subjRows = Object.entries(data.subjects || {}).filter(([, d]) => d.total > 0).map(([subj, d]) => {
+      const sp = Math.round((d.correct / d.total) * 100)
+      const color = sp >= 70 ? '#10b981' : sp >= 50 ? '#f59e0b' : '#ef4444'
+      const s = SUBJECTS_MAP[subj] || { label: subj, emoji: '📚', color: '#3b82f6' }
+      return `<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem">
+        <span style="font-size:0.875rem;width:90px;color:${s.color}">${s.emoji} ${s.label.split(' ')[0]}</span>
+        <div style="flex:1;height:8px;background:#1a2540;border-radius:4px;overflow:hidden"><div style="height:100%;width:${sp}%;background:${color};border-radius:4px"></div></div>
+        <span style="font-size:0.8rem;font-weight:700;color:${color};width:32px;text-align:right">${sp}%</span>
+      </div>`
+    }).join('')
+
+    app.innerHTML = `
+      <div style="min-height:100vh;background:#0a0f1e;color:#f9fafb;font-family:Inter,sans-serif;padding:2rem 1rem">
+        <div style="max-width:500px;margin:0 auto">
+          <div style="text-align:center;margin-bottom:2rem">
+            <a href="/" style="color:#3b82f6;font-size:1.5rem;font-weight:800;text-decoration:none">Decifra<span style="color:#3b82f6">.</span></a>
+          </div>
+          <div style="background:#111827;border:1px solid #1e2d4a;border-radius:20px;padding:1.75rem;text-align:center;margin-bottom:1rem">
+            <div style="width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:1.75rem;font-weight:800;margin:0 auto 1rem">${(data.name || 'E')[0].toUpperCase()}</div>
+            <div style="font-size:1.25rem;font-weight:700;margin-bottom:0.25rem">${data.name || 'Estudante'}</div>
+            <div style="color:${level.color};font-weight:700;margin-bottom:1rem">${level.emoji} ${level.name} · ${xp} XP</div>
+            <div style="display:flex;justify-content:center;gap:2rem">
+              <div><div style="font-size:1.5rem;font-weight:900;color:#3b82f6">${data.totalQuestions || 0}</div><div style="font-size:0.75rem;color:#6b7280">questões</div></div>
+              <div><div style="font-size:1.5rem;font-weight:900;color:#10b981">${pct}%</div><div style="font-size:0.75rem;color:#6b7280">acertos</div></div>
+              <div><div style="font-size:1.5rem;font-weight:900;color:#f59e0b">🔥${data.streak || 0}</div><div style="font-size:0.75rem;color:#6b7280">streak</div></div>
+              <div><div style="font-size:1.5rem;font-weight:900;color:#a78bfa">${data.simuladosDone || 0}</div><div style="font-size:0.75rem;color:#6b7280">simulados</div></div>
+            </div>
+          </div>
+          ${badges.length > 0 ? `
+          <div style="background:#111827;border:1px solid #1e2d4a;border-radius:16px;padding:1.25rem;margin-bottom:1rem">
+            <div style="font-weight:700;font-size:0.9rem;margin-bottom:0.75rem">Conquistas ${badges.length}/${BADGES.length}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:0.5rem">${badges.map(b => `<div style="background:#1a2540;border-radius:10px;padding:0.4rem 0.75rem;font-size:0.8rem;display:flex;align-items:center;gap:0.375rem">${b.icon} ${b.name}</div>`).join('')}</div>
+          </div>` : ''}
+          ${subjRows ? `
+          <div style="background:#111827;border:1px solid #1e2d4a;border-radius:16px;padding:1.25rem;margin-bottom:1.5rem">
+            <div style="font-weight:700;font-size:0.9rem;margin-bottom:0.75rem">Por matéria</div>
+            ${subjRows}
+          </div>` : ''}
+          <div style="text-align:center">
+            <a href="/app" style="background:#3b82f6;color:#fff;padding:0.875rem 2rem;border-radius:10px;font-weight:700;text-decoration:none;display:inline-block;margin-bottom:0.75rem">Estudar no Decifra grátis →</a>
+            <div style="color:#6b7280;font-size:0.8rem">ENEM · Vestibulares · Concursos Públicos</div>
+          </div>
+        </div>
+      </div>
+    `
+  } catch {
+    app.innerHTML = `<div class="loading-screen"><div class="loading-logo">Decifra<span>.</span></div><p style="color:#9ca3af;margin-top:1rem">Perfil não encontrado.</p><a href="/" style="color:#3b82f6;margin-top:0.5rem;display:block">← Ir para o início</a></div>`
+  }
+}
+
 // ===== UPGRADE MODAL =====
 function renderUpgradeModal() {
   const existing = document.querySelector('.modal-overlay')
@@ -2685,6 +2790,7 @@ function renderUpgradeModal() {
     const btn = document.getElementById('upgradeBtn')
     btn.disabled = true
     btn.textContent = 'Aguarde...'
+    track('checkout_start', { plan: selected })
     try {
       const data = await api('/api/stripe/checkout', { plan: selected })
       window.location.href = data.url
@@ -2739,6 +2845,13 @@ async function init() {
     state.deferredInstall = e
     setTimeout(() => { if (state.user) renderInstallBanner() }, 30000)
   })
+
+  // Handle public profile route /perfil/:userId
+  const perfilMatch = window.location.pathname.match(/^\/perfil\/([^/]+)$/)
+  if (perfilMatch) {
+    renderPerfilPublico(perfilMatch[1])
+    return
+  }
 
   // Handle password reset link (Supabase redirects with #access_token=...&type=recovery)
   const hashParams = new URLSearchParams(window.location.hash.replace('#', ''))
