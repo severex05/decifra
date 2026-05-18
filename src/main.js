@@ -60,7 +60,7 @@ const state = {
   referralCode: null,
   tab: 'inicio',
   tutor: { chatsBySubject: {}, subject: 'matematica', loading: false, used: 0, limit: 5 },
-  simulado: { screen: 'menu', type: null, questions: [], current: 0, answers: [], timeLeft: 0, timer: null, score: null, loading: false },
+  simulado: { screen: 'menu', type: null, questions: [], current: 0, answers: [], timeLeft: 0, timer: null, score: null, loading: false, questionTimes: [], questionStartTime: 0 },
   diag: { screen: 'intro', questions: [], current: 0, answers: [] },
   flashcards: { screen: 'menu', reviewIdx: 0, flipped: false },
   progresso: { totalQuestions: 0, correct: 0, streak: 0, subjects: {}, simuladosDone: 0 },
@@ -1103,8 +1103,8 @@ function renderSimulados(container) {
         </div>
         <div class="simulado-type-card" data-type="vestibular">
           <div class="simulado-type-info">
-            <h3>Vestibular</h3>
-            <p>FUVEST, UNICAMP, UEL e outros</p>
+            <h3>Vestibular Geral</h3>
+            <p>FUVEST, UNICAMP, UNESP — nível alto</p>
             <div class="simulado-meta">
               <span class="meta-chip">⏱ ~30 min</span>
               <span class="meta-chip">20 questões</span>
@@ -1112,6 +1112,30 @@ function renderSimulados(container) {
             </div>
           </div>
           <div class="simulado-type-icon">🎓</div>
+        </div>
+        <div class="simulado-type-card" data-type="fuvest">
+          <div class="simulado-type-info">
+            <h3>FUVEST (USP)</h3>
+            <p>Questões estilo FUVEST — alta dificuldade</p>
+            <div class="simulado-meta">
+              <span class="meta-chip">⏱ ~30 min</span>
+              <span class="meta-chip">20 questões</span>
+              ${isPro() ? '' : '<span class="meta-chip" style="color:var(--primary)">Pro</span>'}
+            </div>
+          </div>
+          <div class="simulado-type-icon">🏫</div>
+        </div>
+        <div class="simulado-type-card" data-type="unicamp">
+          <div class="simulado-type-info">
+            <h3>UNICAMP</h3>
+            <p>Questões estilo UNICAMP — interpretação e raciocínio</p>
+            <div class="simulado-meta">
+              <span class="meta-chip">⏱ ~30 min</span>
+              <span class="meta-chip">20 questões</span>
+              ${isPro() ? '' : '<span class="meta-chip" style="color:var(--primary)">Pro</span>'}
+            </div>
+          </div>
+          <div class="simulado-type-icon">🔬</div>
         </div>
         <div class="simulado-type-card" data-type="concurso">
           <div class="simulado-type-info">
@@ -1125,9 +1149,33 @@ function renderSimulados(container) {
           </div>
           <div class="simulado-type-icon">🏛️</div>
         </div>
+        <div class="simulado-type-card" data-type="concurso_federal">
+          <div class="simulado-type-info">
+            <h3>Concurso Federal</h3>
+            <p>Estilo CESPE/CEBRASPE — questões objetivas</p>
+            <div class="simulado-meta">
+              <span class="meta-chip">⏱ ~30 min</span>
+              <span class="meta-chip">20 questões</span>
+              ${isPro() ? '' : '<span class="meta-chip" style="color:var(--primary)">Pro</span>'}
+            </div>
+          </div>
+          <div class="simulado-type-icon">📋</div>
+        </div>
+        <div class="simulado-type-card" data-type="militar">
+          <div class="simulado-type-info">
+            <h3>Militar (ESPCEX/AFA)</h3>
+            <p>Matemática, Física, Português e Inglês — nível alto</p>
+            <div class="simulado-meta">
+              <span class="meta-chip">⏱ ~30 min</span>
+              <span class="meta-chip">20 questões</span>
+              ${isPro() ? '' : '<span class="meta-chip" style="color:var(--primary)">Pro</span>'}
+            </div>
+          </div>
+          <div class="simulado-type-icon">⭐</div>
+        </div>
         <div class="simulado-type-card" data-type="ia">
           <div class="simulado-type-info">
-            <h3>Simulado IA ✨</h3>
+            <h3>Simulado IA ENEM ✨</h3>
             <p>10 questões únicas geradas por IA — banco infinito</p>
             <div class="simulado-meta">
               <span class="meta-chip">⏱ ~15 min</span>
@@ -1137,11 +1185,35 @@ function renderSimulados(container) {
           </div>
           <div class="simulado-type-icon">🤖</div>
         </div>
+        <div class="simulado-type-card" data-type="vestibular_ia">
+          <div class="simulado-type-info">
+            <h3>Simulado IA Vestibular ✨</h3>
+            <p>10 questões estilo FUVEST/UNICAMP geradas por IA</p>
+            <div class="simulado-meta">
+              <span class="meta-chip">⏱ ~20 min</span>
+              <span class="meta-chip">10 questões</span>
+              ${isPro() ? '' : '<span class="meta-chip" style="color:var(--primary)">Pro</span>'}
+            </div>
+          </div>
+          <div class="simulado-type-icon">🎓</div>
+        </div>
+        <div class="simulado-type-card" data-type="concurso_ia">
+          <div class="simulado-type-info">
+            <h3>Simulado IA Concurso ✨</h3>
+            <p>10 questões estilo CESPE/FCC geradas por IA</p>
+            <div class="simulado-meta">
+              <span class="meta-chip">⏱ ~20 min</span>
+              <span class="meta-chip">10 questões</span>
+              ${isPro() ? '' : '<span class="meta-chip" style="color:var(--primary)">Pro</span>'}
+            </div>
+          </div>
+          <div class="simulado-type-icon">🏛️</div>
+        </div>
       </div>
       ${(() => {
         const hist = loadSimuladoHistory()
         if (!hist.length) return ''
-        const typeNames = { mini: 'Mini', enem: 'ENEM', enem_completo: 'ENEM Completo', vestibular: 'Vestibular', concurso: 'Concurso', ia: 'IA ✨' }
+        const typeNames = { mini: 'Mini', enem: 'ENEM', enem_completo: 'ENEM Completo', vestibular: 'Vestibular', fuvest: 'FUVEST', unicamp: 'UNICAMP', concurso: 'Concurso', concurso_federal: 'C.Federal', militar: 'Militar', ia: 'IA ✨', vestibular_ia: 'IA Vest.', concurso_ia: 'IA Conc.' }
         const items = hist.slice(0, 5).map(h => {
           const color = h.pct >= 70 ? '#10b981' : h.pct >= 50 ? '#f59e0b' : '#ef4444'
           const d = new Date(h.date)
@@ -1150,7 +1222,11 @@ function renderSimulados(container) {
         }).join('')
         return `<div class="mais-section-title" style="margin-top:1.25rem;margin-bottom:0.5rem">Histórico recente</div><div class="history-list">${items}</div>`
       })()}
-      <div class="mais-section-title" style="margin-top:1.25rem;margin-bottom:0.75rem">Provas anteriores ENEM</div>
+      <div class="mais-section-title" style="margin-top:1.25rem;margin-bottom:0.5rem">Mini por matéria</div>
+      <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.75rem">
+        ${SUBJECTS.map(s => `<button class="btn-subj-filter" data-subj="${s.id}" style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:0.3rem 0.7rem;font-size:0.75rem;cursor:pointer;color:${s.color}">${s.emoji} ${s.label.split(' ')[0]}</button>`).join('')}
+      </div>
+      <div class="mais-section-title" style="margin-top:0.5rem;margin-bottom:0.75rem">Provas anteriores ENEM</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.5rem;margin-bottom:1rem">
         ${[2023,2022,2021,2020,2019,2018].map(year => `
           <div class="simulado-ano-card ${!isPro() ? 'locked' : ''}" data-year="${year}">
@@ -1178,11 +1254,21 @@ function renderSimulados(container) {
     card.onclick = () => {
       const type = card.dataset.type
       if (type !== 'mini' && !isPro()) { renderUpgradeModal(); return }
-      if (type === 'ia') {
+      const isIaType = type === 'ia' || type.endsWith('_ia')
+      if (isIaType) {
         const content = document.getElementById('appContent')
         if (content) content.innerHTML = `<div class="loading-screen"><div class="loading-logo">Decifra<span>.</span></div><div class="spinner"></div><p style="color:var(--text2);font-size:0.875rem">Gerando questões com IA... (~10s)</p></div>`
       }
       startSimulado(type)
+    }
+  })
+
+  container.querySelectorAll('.btn-subj-filter').forEach(btn => {
+    btn.onclick = () => {
+      const subj = btn.dataset.subj
+      btn.style.opacity = '0.5'
+      btn.textContent = '⏳'
+      startSimuladoBySubject(subj)
     }
   })
 
@@ -1209,10 +1295,38 @@ async function startSimuladoByYear(year) {
     state.simulado.questions = data.questions
     state.simulado.current = 0
     state.simulado.answers = []
+    state.simulado.questionTimes = []
+    state.simulado.questionStartTime = Date.now()
     state.simulado.timeLeft = data.timeLimit
     state.simulado.screen = 'quiz'
     state.simulado.loading = false
     track('simulado_start', { type: 'enem_ano', year })
+    renderTab('simulados')
+    startTimer()
+  } catch {
+    toast('Erro ao carregar simulado. Tente novamente.', 'error')
+    state.simulado.screen = 'menu'
+    renderTab('simulados')
+  }
+}
+
+async function startSimuladoBySubject(subject) {
+  const s = SUBJECTS.find(x => x.id === subject)
+  state.simulado.type = `mini_${subject}`
+  state.simulado.screen = 'loading'
+  const content = document.getElementById('appContent')
+  if (content) content.innerHTML = `<div class="loading-screen"><div class="loading-logo">Decifra<span>.</span></div><div class="spinner"></div><p style="color:var(--text2);font-size:0.875rem">Carregando questões de ${s?.label || subject}...</p></div>`
+  try {
+    const data = await api('/api/simulado/start', { type: 'mini', subject })
+    state.simulado.questions = data.questions
+    state.simulado.current = 0
+    state.simulado.answers = []
+    state.simulado.questionTimes = []
+    state.simulado.questionStartTime = Date.now()
+    state.simulado.timeLeft = data.timeLimit
+    state.simulado.screen = 'quiz'
+    state.simulado.loading = false
+    track('simulado_start', { type: 'mini_subject', subject })
     renderTab('simulados')
     startTimer()
   } catch {
@@ -1230,13 +1344,18 @@ async function startSimulado(type) {
   const content = document.getElementById('appContent')
   if (content) content.innerHTML = `<div class="loading-screen"><div class="loading-logo">Decifra<span>.</span></div><div class="spinner"></div><p style="color:var(--text2);font-size:0.875rem">Preparando simulado...</p></div>`
 
+  const IA_MODES = ['fuvest_ia', 'unicamp_ia', 'concurso_ia', 'concurso_federal_ia', 'vestibular_ia']
   try {
     const data = type === 'ia'
-      ? await api('/api/simulado/ia', {})
-      : await api('/api/simulado/start', { type })
+      ? await api('/api/simulado/ia', { mode: 'enem' })
+      : IA_MODES.includes(type)
+        ? await api('/api/simulado/ia', { mode: type.replace('_ia', '') })
+        : await api('/api/simulado/start', { type })
     state.simulado.questions = data.questions
     state.simulado.current = 0
     state.simulado.answers = []
+    state.simulado.questionTimes = []
+    state.simulado.questionStartTime = Date.now()
     state.simulado.timeLeft = data.timeLimit
     state.simulado.screen = 'quiz'
     state.simulado.loading = false
@@ -1331,7 +1450,13 @@ function renderQuiz(container) {
         <div class="quiz-subject-label" style="color:${subjectColor(q.subject)}">${subjectLabel(q.subject)} · ${q.year || 'ENEM'}</div>
         <div class="quiz-enunciado">${q.question}</div>
         <div class="quiz-options" id="quizOpts">${opts}</div>
-        ${answered ? `<div class="quiz-explanation"><strong>${answers[current] === q.answerIndex ? '✅ Correto!' : '❌ Errado'}</strong>${q.explanation}</div>` : ''}
+        ${answered ? `<div class="quiz-explanation">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
+            <strong>${answers[current] === q.answerIndex ? '✅ Correto!' : '❌ Errado'}</strong>
+            ${state.simulado.questionTimes[current] != null ? `<span style="font-size:0.78rem;color:var(--text2);background:var(--card2);padding:0.2rem 0.5rem;border-radius:6px">⏱ ${state.simulado.questionTimes[current]}s</span>` : ''}
+          </div>
+          ${q.explanation}
+        </div>` : ''}
       </div>
       <div class="quiz-footer">
         ${current > 0 ? `<button class="btn btn-outline" id="quizPrev">← Anterior</button>` : '<div></div>'}
@@ -1356,11 +1481,13 @@ function renderQuiz(container) {
     state.simulado.screen = 'menu'
     renderTab('simulados')
   })
-  document.getElementById('quizPrev')?.addEventListener('click', () => { state.simulado.current--; renderTab('simulados') })
-  document.getElementById('quizNext')?.addEventListener('click', () => { state.simulado.current++; renderTab('simulados') })
+  document.getElementById('quizPrev')?.addEventListener('click', () => { state.simulado.current--; state.simulado.questionStartTime = Date.now(); renderTab('simulados') })
+  document.getElementById('quizNext')?.addEventListener('click', () => { state.simulado.current++; state.simulado.questionStartTime = Date.now(); renderTab('simulados') })
   document.getElementById('quizSkip')?.addEventListener('click', () => {
+    const elapsed = Math.round((Date.now() - (state.simulado.questionStartTime || Date.now())) / 1000)
+    state.simulado.questionTimes[current] = elapsed
     state.simulado.answers[current] = -1
-    if (current < questions.length - 1) { state.simulado.current++; renderTab('simulados') }
+    if (current < questions.length - 1) { state.simulado.current++; state.simulado.questionStartTime = Date.now(); renderTab('simulados') }
     else finishSimulado()
   })
   document.getElementById('quizFinish')?.addEventListener('click', () => finishSimulado())
@@ -1368,6 +1495,8 @@ function renderQuiz(container) {
 
 function answerQuiz(idx) {
   const { current, questions } = state.simulado
+  const elapsed = Math.round((Date.now() - (state.simulado.questionStartTime || Date.now())) / 1000)
+  state.simulado.questionTimes[current] = elapsed
   state.simulado.answers[current] = idx
   const isCorrect = idx === questions[current].answerIndex
   if (isCorrect) state.progresso.correct = (state.progresso.correct || 0) + 1
@@ -1473,6 +1602,16 @@ function renderResults(container) {
       </svg>
       <div class="results-msg" style="color:${scoreColor}">${scoreMsg}</div>
       ${['enem','enem_completo'].includes(state.simulado.type) ? `<div class="results-nota-enem">Nota ENEM estimada: <strong style="color:${scoreColor}">${nota} pontos</strong></div>` : ''}
+      ${(() => {
+        const times = (state.simulado.questionTimes || []).filter(t => t != null && t > 0)
+        if (!times.length) return ''
+        const avg = Math.round(times.reduce((a, b) => a + b, 0) / times.length)
+        const slowest = Math.max(...times)
+        return `<div style="display:flex;gap:0.75rem;justify-content:center;margin:0.5rem 0">
+          <div style="background:var(--surface2);border-radius:8px;padding:0.4rem 0.8rem;font-size:0.8rem;color:var(--text2)">⏱ Média: <strong style="color:var(--text)">${avg}s/questão</strong></div>
+          <div style="background:var(--surface2);border-radius:8px;padding:0.4rem 0.8rem;font-size:0.8rem;color:var(--text2)">🐢 Mais lenta: <strong style="color:var(--text)">${slowest}s</strong></div>
+        </div>`
+      })()}
       ${hasMultiSubj ? `
         <div class="results-subjects">
           <div class="results-subj-title">Por matéria</div>
@@ -1513,7 +1652,7 @@ function renderResults(container) {
 }
 
 function renderGabarito(container) {
-  const { questions, answers, score } = state.simulado
+  const { questions, answers, score, questionTimes } = state.simulado
   if (!questions.length) { state.simulado.screen = 'menu'; renderTab('simulados'); return }
 
   const pct = score ? Math.round((score.correct / score.total) * 100) : 0
@@ -1536,7 +1675,10 @@ function renderGabarito(container) {
       <div style="border:1px solid ${isCorrect ? 'rgba(16,185,129,0.3)' : answered ? 'rgba(239,68,68,0.3)' : 'var(--border)'};border-radius:12px;padding:1rem;margin-bottom:0.75rem;background:var(--surface)">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
           <span style="font-size:0.75rem;color:${s?.color || 'var(--primary)'};font-weight:600">${s?.emoji || ''} ${subjectLabel(q.subject)}</span>
-          <span style="font-size:0.75rem;font-weight:700;color:${isCorrect ? '#10b981' : answered ? '#ef4444' : 'var(--text3)'}">${!answered ? '—' : isCorrect ? 'Correto ✅' : 'Errado ❌'}</span>
+          <div style="display:flex;gap:0.5rem;align-items:center">
+            ${questionTimes?.[i] != null ? `<span style="font-size:0.7rem;color:var(--text3)">⏱ ${questionTimes[i]}s</span>` : ''}
+            <span style="font-size:0.75rem;font-weight:700;color:${isCorrect ? '#10b981' : answered ? '#ef4444' : 'var(--text3)'}">${!answered ? '—' : isCorrect ? 'Correto ✅' : 'Errado ❌'}</span>
+          </div>
         </div>
         <div style="font-size:0.85rem;line-height:1.5;margin-bottom:0.75rem;color:var(--text)">${q.question}</div>
         <div>${opts}</div>
@@ -1619,6 +1761,11 @@ function renderProgresso(container) {
         <div class="activity-strip">${activityHtml}</div>
       </div>
 
+      <div class="card" id="weeklyCard" style="margin-bottom:1.25rem">
+        <div class="card-title">Evolução semanal</div>
+        <div id="weeklyContent" style="color:var(--text3);font-size:0.85rem;text-align:center;padding:0.5rem 0">Carregando...</div>
+      </div>
+
       <div class="progresso-overview">
         <div class="prog-card">
           <div class="prog-card-value text-primary">${p.totalQuestions || 0}</div>
@@ -1677,6 +1824,42 @@ function renderProgresso(container) {
   loadErrosSection()
   loadHistoricoSection()
   loadRankingSection()
+  loadWeeklySection()
+}
+
+async function loadWeeklySection() {
+  const el = document.getElementById('weeklyContent')
+  if (!el) return
+  try {
+    const token = localStorage.getItem('decifra_token')
+    const r = await fetch(`${API}/api/stats/semanal`, { headers: { Authorization: `Bearer ${token}` } })
+    const data = await r.json()
+    const weeks = (data.weeks || []).filter(w => w.simulados > 0 || w.total > 0)
+    if (!weeks.length) { el.textContent = 'Faça simulados para ver sua evolução aqui.'; return }
+    const maxPct = Math.max(...weeks.map(w => w.pct), 1)
+    el.innerHTML = `
+      <div style="display:flex;align-items:flex-end;gap:0.3rem;height:80px;margin-bottom:0.5rem">
+        ${weeks.slice(-8).map(w => {
+          const barH = w.pct > 0 ? Math.max(8, Math.round((w.pct / 100) * 72)) : 4
+          const color = w.pct >= 70 ? '#10b981' : w.pct >= 50 ? '#f59e0b' : w.pct > 0 ? '#ef4444' : 'var(--border)'
+          return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px">
+            <div style="font-size:0.6rem;color:var(--text3)">${w.pct > 0 ? w.pct + '%' : ''}</div>
+            <div style="width:100%;background:${color};border-radius:4px 4px 0 0;height:${barH}px;transition:height 0.3s"></div>
+          </div>`
+        }).join('')}
+      </div>
+      <div style="display:flex;gap:0.3rem">
+        ${weeks.slice(-8).map(w => `<div style="flex:1;font-size:0.6rem;color:var(--text3);text-align:center">${w.label}</div>`).join('')}
+      </div>
+      <div style="display:flex;gap:1rem;margin-top:0.75rem;flex-wrap:wrap">
+        <span style="font-size:0.78rem;color:var(--text2)">📊 ${data.totalSimulados} simulados</span>
+        <span style="font-size:0.78rem;color:var(--text2)">📝 ${data.totalQuestions} questões</span>
+      </div>
+    `
+  } catch {
+    const el2 = document.getElementById('weeklyContent')
+    if (el2) el2.textContent = 'Erro ao carregar dados.'
+  }
 }
 
 async function loadHistoricoSection() {
@@ -1688,7 +1871,7 @@ async function loadHistoricoSection() {
     const data = await r.json()
     const hist = data.history || []
     if (!hist.length) { el.textContent = 'Nenhum simulado finalizado ainda.'; return }
-    const typeNames = { mini: 'Mini', enem: 'ENEM', enem_completo: 'ENEM Completo', vestibular: 'Vestibular', concurso: 'Concurso', ia: 'IA ✨', diagnostico: 'Diagnóstico' }
+    const typeNames = { mini: 'Mini', enem: 'ENEM', enem_completo: 'ENEM Completo', vestibular: 'Vestibular', fuvest: 'FUVEST', unicamp: 'UNICAMP', concurso: 'Concurso', concurso_federal: 'C.Federal', militar: 'Militar', ia: 'IA ENEM ✨', vestibular_ia: 'IA Vest. ✨', concurso_ia: 'IA Conc. ✨', diagnostico: 'Diagnóstico' }
     el.innerHTML = `<div class="history-list">${hist.slice(0, 10).map(h => {
       const pct = h.score?.total > 0 ? Math.round((h.score.correct / h.score.total) * 100) : 0
       const color = pct >= 70 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444'
@@ -2447,6 +2630,26 @@ function renderRedacaoResult(container, c, textoOriginal, temaOriginal) {
         ${(c.competencias || []).map(competRow).join('')}
       </div>
 
+      ${(c.paragrafos?.length > 0) ? `
+      <div class="card" style="margin-bottom:1rem">
+        <div class="card-title">Feedback por parágrafo</div>
+        ${(c.paragrafos || []).map(p => {
+          const score = p.nota || 0
+          const barColor = score >= 8 ? '#10b981' : score >= 5 ? '#f59e0b' : '#ef4444'
+          return `
+          <div style="margin-bottom:0.75rem;padding:0.75rem;background:var(--surface2);border-radius:10px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.35rem">
+              <span style="font-size:0.8rem;font-weight:700;color:var(--text1)">${p.label || 'Parágrafo ' + p.numero}</span>
+              <span style="font-size:0.75rem;font-weight:700;color:${barColor}">${score}/10</span>
+            </div>
+            <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-bottom:0.4rem">
+              <div style="height:100%;width:${score * 10}%;background:${barColor};border-radius:2px"></div>
+            </div>
+            <p style="font-size:0.78rem;color:var(--text2);margin:0;line-height:1.5">${p.feedback}</p>
+          </div>`
+        }).join('')}
+      </div>` : ''}
+
       <div class="card" style="margin-bottom:1rem">
         <div class="card-title">Pontos fortes</div>
         ${(c.pontos_fortes || []).map(p => `<div style="font-size:0.875rem;margin-bottom:0.4rem">✅ ${p}</div>`).join('')}
@@ -3123,6 +3326,101 @@ const BLOG_POSTS = [
       <p>Foque nos pontos que ainda erram mais. Faça pelo menos 2 simulados completos para treinar resistência.</p>
       <h2>Dica: use o Decifra</h2>
       <p>O plano de estudos do Decifra cria um cronograma semanal personalizado baseado na sua prova e data-alvo.</p>
+    `
+  },
+  {
+    slug: 'como-passar-fuvest-unicamp-vestibulares',
+    title: 'FUVEST e UNICAMP: estratégias para passar nas melhores universidades do Brasil',
+    date: '2026-05-16',
+    description: 'Entenda as diferenças entre FUVEST e UNICAMP e saiba como montar um plano de estudos eficiente para passar na USP ou UNICAMP.',
+    content: `
+      <p>A FUVEST (USP) e a UNICAMP são dois dos vestibulares mais concorridos do Brasil. Entender as diferenças entre eles é essencial para se preparar de forma eficiente.</p>
+      <h2>FUVEST: o vestibular da USP</h2>
+      <p>A FUVEST tem duas fases. A primeira é eliminatória com 90 questões de múltipla escolha cobrindo todo o ensino médio. A segunda é discursiva com redação obrigatória.</p>
+      <ul>
+        <li><strong>Biologia e Química</strong> têm peso alto na primeira fase</li>
+        <li><strong>Matemática</strong> exige nível elevado de raciocínio formal</li>
+        <li><strong>Literatura brasileira</strong> é muito cobrada em Português</li>
+        <li>A prova dura 5 horas com 90 questões</li>
+      </ul>
+      <h2>UNICAMP: criatividade e interdisciplinaridade</h2>
+      <p>O vestibular da UNICAMP é famoso por questões interdisciplinares que exigem raciocínio analítico e criatividade, não apenas memorização.</p>
+      <ul>
+        <li>Questões de contexto atual (política, ciência, cultura)</li>
+        <li><strong>Redação obrigatória</strong> com foco em argumentação</li>
+        <li>Física e Química com forte componente experimental</li>
+        <li>Menor peso de memorização, maior peso de raciocínio</li>
+      </ul>
+      <h2>Como se preparar com o Decifra</h2>
+      <p>O Decifra tem simulados específicos para FUVEST e UNICAMP com questões de provas anteriores. Use o modo IA Vestibular para treinar com questões geradas no estilo de cada banca.</p>
+      <h2>Dicas de estudo</h2>
+      <ol>
+        <li>Faça o diagnóstico para identificar suas matérias mais fracas</li>
+        <li>Resolva questões reais das últimas 5 edições de cada vestibular</li>
+        <li>Pratique redação semanalmente com correção automática</li>
+        <li>Use o tutor IA para questões de Física e Química avançadas</li>
+      </ol>
+    `
+  },
+  {
+    slug: 'como-passar-concurso-publico-federal',
+    title: 'Concurso Público Federal: como estudar e passar na primeira tentativa',
+    date: '2026-05-17',
+    description: 'Guia completo para candidatos de concursos públicos federais: matérias obrigatórias, estratégias de estudo e como usar o Decifra para se preparar.',
+    content: `
+      <p>Os concursos públicos federais oferecem estabilidade, bons salários e benefícios. Mas a aprovação exige método e disciplina. Veja como estruturar sua preparação.</p>
+      <h2>Matérias obrigatórias em concursos federais</h2>
+      <p>Independente do cargo, quase todos os concursos federais cobram:</p>
+      <ul>
+        <li><strong>Língua Portuguesa:</strong> interpretação de texto, gramática, ortografia</li>
+        <li><strong>Raciocínio Lógico:</strong> proposições, silogismos, tabelas e sequências</li>
+        <li><strong>Informática:</strong> pacote Office, internet, segurança da informação</li>
+        <li><strong>Matemática básica:</strong> porcentagem, regra de três, juros</li>
+        <li><strong>Legislação:</strong> Constituição Federal, lei do órgão específico</li>
+      </ul>
+      <h2>Estratégia de estudo eficiente</h2>
+      <ol>
+        <li><strong>Escolha o concurso-alvo:</strong> Foque em 1 ou 2 concursos por vez</li>
+        <li><strong>Baixe o edital:</strong> O edital define exatamente o que será cobrado</li>
+        <li><strong>Priorize Português e Raciocínio Lógico:</strong> São as matérias com maior peso</li>
+        <li><strong>Resolva questões do CESPE, FCC e FGV:</strong> As principais bancas têm estilos distintos</li>
+        <li><strong>Faça simulados cronometrados:</strong> A gestão do tempo é decisiva</li>
+      </ol>
+      <h2>Diferença entre bancas</h2>
+      <p><strong>CESPE/CEBRASPE:</strong> Questões certo/errado, pune erros. Exige conhecimento preciso.<br>
+      <strong>FCC:</strong> Múltipla escolha clássica, cobra mais decoreba de legislação.<br>
+      <strong>FGV:</strong> Questões mais interpretativas, cobra raciocínio e atualidades.</p>
+      <h2>Use o Decifra para concursos</h2>
+      <p>O Decifra tem simulados específicos para concursos públicos com questões de Raciocínio Lógico, Português e Informática. Use o modo IA Concurso para treinar com questões no estilo das principais bancas.</p>
+    `
+  },
+  {
+    slug: 'raciocinio-logico-concursos-guia',
+    title: 'Raciocínio Lógico para concursos: do zero à aprovação',
+    date: '2026-05-18',
+    description: 'Domine os tipos de questões de raciocínio lógico mais cobrados em concursos públicos com exemplos práticos e dicas de resolução rápida.',
+    content: `
+      <p>Raciocínio Lógico é a matéria que mais reprova em concursos públicos. Mas também é a que mais se aprende com prática sistemática. Veja o guia completo.</p>
+      <h2>Tipos de questões mais cobrados</h2>
+      <ul>
+        <li><strong>Proposições lógicas:</strong> negação, conjunção, disjunção, condicional</li>
+        <li><strong>Silogismos:</strong> "Todo A é B. Todo B é C. Logo, todo A é C."</li>
+        <li><strong>Sequências e padrões:</strong> numéricas, alfabéticas, figurativas</li>
+        <li><strong>Tabelas e gráficos:</strong> interpretação de dados estatísticos</li>
+        <li><strong>Lógica de conjuntos:</strong> diagramas de Euler-Venn</li>
+        <li><strong>Raciocínio analítico:</strong> ordenação, posicionamento, agrupamento</li>
+      </ul>
+      <h2>Técnica da negação</h2>
+      <p>Para questões do tipo "se P então Q", a negação correta é "P e não Q" — não é "se P então não Q" nem "se não P então Q". Dominar negações é essencial para o CESPE.</p>
+      <h2>Estratégia de resolução rápida</h2>
+      <ol>
+        <li>Leia a questão identificando o tipo (proposição, sequência, conjunto)</li>
+        <li>Desenhe o diagrama ou monte a tabela antes de resolver</li>
+        <li>Elimine alternativas claramente erradas primeiro</li>
+        <li>Nunca pule questões de lógica — geralmente têm resolução mecânica</li>
+      </ol>
+      <h2>Quanto tempo dedicar?</h2>
+      <p>Dedique 30 minutos por dia exclusivamente para Raciocínio Lógico durante 60 dias. Com o Decifra, você pode fazer mini-simulados específicos de Raciocínio Lógico e usar o tutor IA para entender imediatamente os erros.</p>
     `
   },
 ]
