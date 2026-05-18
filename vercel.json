@@ -2,6 +2,10 @@
   "routes": [
     { "src": "/app", "dest": "/app.html" },
     { "src": "/app/(.*)", "dest": "/app.html" },
+    { "src": "/perfil/(.*)", "dest": "/app.html" },
+    { "src": "/admin", "dest": "/app.html" },
+    { "src": "/blog", "dest": "/app.html" },
+    { "src": "/blog/(.*)", "dest": "/app.html" },
     { "src": "/privacidade", "dest": "/privacidade.html" },
     { "src": "/termos", "dest": "/termos.html" },
     { "src": "/sw.js", "dest": "/sw.js" },

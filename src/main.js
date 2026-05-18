@@ -56,6 +56,8 @@ const state = {
   token: null,
   plan: 'free',
   trialEnd: null,
+  trialUsed: false,
+  referralCode: null,
   tab: 'inicio',
   tutor: { chatsBySubject: {}, subject: 'matematica', loading: false, used: 0, limit: 5 },
   simulado: { screen: 'menu', type: null, questions: [], current: 0, answers: [], timeLeft: 0, timer: null, score: null, loading: false },
@@ -384,6 +386,12 @@ async function handleAuth(e, mode) {
     if (mode === 'register') {
       track('signup', { plan: 'free' })
       _ph?.identify(data.user.id, { email: data.user.email, name: data.user.name })
+      // Apply referral code if pending
+      const pendingRef = localStorage.getItem('decifra_pending_ref')
+      if (pendingRef) {
+        localStorage.removeItem('decifra_pending_ref')
+        api('/api/referral/use', { code: pendingRef }).then(() => toast('Código de indicação aplicado! +7 dias Pro 🎁', 'success')).catch(() => {})
+      }
     } else {
       track('login')
       _ph?.identify(data.user.id)
@@ -491,6 +499,8 @@ async function loadUserData() {
     const data = await api('/api/user/me')
     state.plan = data.plan || 'free'
     state.trialEnd = data.trialEnd
+    state.trialUsed = data.trialUsed || false
+    state.referralCode = data.referralCode || null
     state.xp = data.xp || 0
     state.diagnosticoDone = data.diagnosticoDone || false
     state.progresso = data.progresso || state.progresso
@@ -1140,6 +1150,16 @@ function renderSimulados(container) {
         }).join('')
         return `<div class="mais-section-title" style="margin-top:1.25rem;margin-bottom:0.5rem">Histórico recente</div><div class="history-list">${items}</div>`
       })()}
+      <div class="mais-section-title" style="margin-top:1.25rem;margin-bottom:0.75rem">Provas anteriores ENEM</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.5rem;margin-bottom:1rem">
+        ${[2023,2022,2021,2020,2019,2018].map(year => `
+          <div class="simulado-ano-card ${!isPro() ? 'locked' : ''}" data-year="${year}">
+            <div style="font-weight:700;font-size:1rem">${year}</div>
+            <div style="font-size:0.72rem;color:var(--text2)">ENEM${!isPro() ? ' 🔒' : ''}</div>
+          </div>
+        `).join('')}
+      </div>
+
       ${!isPro() ? `
       <div class="card" style="background:var(--primary-glow); border-color:rgba(59,130,246,0.3);">
         <div style="display:flex;gap:0.75rem;align-items:center;">
@@ -1168,6 +1188,37 @@ function renderSimulados(container) {
 
   if (document.getElementById('simUpgrade')) {
     document.getElementById('simUpgrade').onclick = () => renderUpgradeModal()
+  }
+
+  container.querySelectorAll('.simulado-ano-card').forEach(card => {
+    card.onclick = () => {
+      if (!isPro()) { renderUpgradeModal(); return }
+      const year = parseInt(card.dataset.year)
+      startSimuladoByYear(year)
+    }
+  })
+}
+
+async function startSimuladoByYear(year) {
+  state.simulado.type = `enem_${year}`
+  state.simulado.screen = 'loading'
+  const content = document.getElementById('appContent')
+  if (content) content.innerHTML = `<div class="loading-screen"><div class="loading-logo">Decifra<span>.</span></div><div class="spinner"></div><p style="color:var(--text2);font-size:0.875rem">Carregando questões de ${year}...</p></div>`
+  try {
+    const data = await api('/api/simulado/start', { type: 'enem', year })
+    state.simulado.questions = data.questions
+    state.simulado.current = 0
+    state.simulado.answers = []
+    state.simulado.timeLeft = data.timeLimit
+    state.simulado.screen = 'quiz'
+    state.simulado.loading = false
+    track('simulado_start', { type: 'enem_ano', year })
+    renderTab('simulados')
+    startTimer()
+  } catch {
+    toast('Erro ao carregar simulado. Tente novamente.', 'error')
+    state.simulado.screen = 'menu'
+    renderTab('simulados')
   }
 }
 
@@ -1812,9 +1863,10 @@ function renderMais(container) {
         </div>
       </div>
 
-      <button class="btn btn-ghost btn-full" id="maisSharePerfil" style="margin-bottom:0.5rem;font-size:0.85rem">
-        🔗 Compartilhar meu perfil
-      </button>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.75rem">
+        <button class="btn btn-ghost btn-full" id="maisSharePerfil" style="font-size:0.82rem">🔗 Meu perfil</button>
+        <button class="btn btn-ghost btn-full" id="maisReferral" style="font-size:0.82rem">🎁 Indicar amigo</button>
+      </div>
 
       ${!isPro() ? `
       <button class="btn btn-primary btn-full" id="maisUpgrade" style="margin-bottom:1rem">
@@ -1889,6 +1941,18 @@ function renderMais(container) {
           </div>
         </div>
       </div>
+
+      <div class="mais-section-title">Recursos</div>
+      <div class="mais-grid">
+        <a href="/blog" class="mais-item" style="text-decoration:none;color:inherit">
+          <div class="mais-icon">📰</div>
+          <div class="mais-info">
+            <div class="mais-label">Blog — dicas ENEM</div>
+            <div class="mais-sub">Estratégias e guias de estudo</div>
+          </div>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </a>
+      </div>
     </div>
   `
 
@@ -1915,6 +1979,8 @@ function renderMais(container) {
       navigator.clipboard?.writeText(url).then(() => toast('Link do perfil copiado! 🔗', 'success')).catch(() => toast(url, ''))
     }
   })
+
+  document.getElementById('maisReferral')?.addEventListener('click', () => showReferralModal())
   document.getElementById('maisUpgrade')?.addEventListener('click', () => renderUpgradeModal())
   document.getElementById('maisPortal')?.addEventListener('click', async () => {
     const btn = document.getElementById('maisPortal')
@@ -2830,6 +2896,278 @@ function renderInstallBanner() {
   }
 }
 
+// ===== TRIAL EXPIRADO =====
+function checkTrialExpired() {
+  if (state.plan !== 'free') return
+  if (!state.trialUsed && !state.trialEnd) return
+  if (!state.trialUsed) return
+  const shownKey = 'decifra_trial_exp_shown'
+  if (localStorage.getItem(shownKey) === new Date().toISOString().slice(0, 10)) return
+  localStorage.setItem(shownKey, new Date().toISOString().slice(0, 10))
+  setTimeout(() => showTrialExpiredModal(), 800)
+}
+
+function showTrialExpiredModal() {
+  const overlay = el('div', 'modal-overlay center')
+  overlay.innerHTML = `
+    <div class="modal-card" style="max-width:420px">
+      <div style="text-align:center;margin-bottom:1rem">
+        <div style="font-size:2.5rem;margin-bottom:0.5rem">😢</div>
+        <h2 style="font-size:1.3rem;font-weight:700;margin-bottom:0.5rem">Seu período Pro expirou</h2>
+        <p style="color:var(--text2);font-size:0.9rem;line-height:1.6">Você voltou ao plano gratuito. Continue tendo acesso ao tutor (5 perguntas/dia), mini-simulados e questão do dia.</p>
+      </div>
+      <div style="background:var(--card2);border-radius:10px;padding:1rem;margin-bottom:1.25rem">
+        <div style="font-size:0.85rem;font-weight:600;margin-bottom:0.5rem;color:var(--text1)">O que você perde no Free:</div>
+        <ul style="color:var(--text2);font-size:0.82rem;line-height:2;margin:0;padding-left:1.25rem">
+          <li>Tutor ilimitado (limite de 5/dia no Free)</li>
+          <li>Plano de estudo personalizado</li>
+          <li>Correção de redação ilimitada</li>
+          <li>Simulados ENEM + IA</li>
+          <li>Flashcards IA por tópico</li>
+        </ul>
+      </div>
+      <button class="btn btn-primary btn-full" id="trialExpUpgrade" style="margin-bottom:0.5rem">⭐ Assinar Pro — R$29/mês</button>
+      <button class="btn btn-ghost btn-full" id="trialExpClose">Continuar no Free</button>
+    </div>
+  `
+  document.body.appendChild(overlay)
+  document.getElementById('trialExpUpgrade').onclick = () => { overlay.remove(); renderUpgradeModal() }
+  document.getElementById('trialExpClose').onclick = () => overlay.remove()
+}
+
+// ===== STREAK RECOVERY =====
+function checkStreakLost() {
+  const lastStreak = parseInt(localStorage.getItem('decifra_last_known_streak') || '0')
+  const currentStreak = state.progresso?.streak || 0
+  // Save current streak for next time
+  if (currentStreak > 0) localStorage.setItem('decifra_last_known_streak', String(currentStreak))
+  // Show modal if user had a streak >= 3 and it just dropped to 0
+  if (lastStreak >= 3 && currentStreak === 0) {
+    const shownKey = 'decifra_streak_loss_shown'
+    if (localStorage.getItem(shownKey) === new Date().toISOString().slice(0, 10)) return
+    localStorage.setItem(shownKey, new Date().toISOString().slice(0, 10))
+    setTimeout(() => showStreakLostModal(lastStreak), 1200)
+  }
+}
+
+function showStreakLostModal(lostStreak) {
+  const overlay = el('div', 'modal-overlay center')
+  overlay.innerHTML = `
+    <div class="modal-card" style="max-width:380px;text-align:center">
+      <div style="font-size:3rem;margin-bottom:0.75rem">💔</div>
+      <h2 style="font-size:1.3rem;font-weight:700;margin-bottom:0.5rem">Streak de ${lostStreak} dias perdido</h2>
+      <p style="color:var(--text2);font-size:0.9rem;line-height:1.6;margin-bottom:1.25rem">Você não estudou ontem e seu streak zerou. Mas não tem problema — comece um novo agora! Cada dia de estudo conta. 💪</p>
+      <button class="btn btn-primary btn-full" id="streakRecoverStart" style="margin-bottom:0.5rem">Começar novo streak agora</button>
+      <button class="btn btn-ghost btn-full" id="streakRecoverClose">Fechar</button>
+    </div>
+  `
+  document.body.appendChild(overlay)
+  document.getElementById('streakRecoverStart').onclick = () => { overlay.remove(); switchTab('simulados') }
+  document.getElementById('streakRecoverClose').onclick = () => overlay.remove()
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove() }
+}
+
+// ===== REFERRAL MODAL =====
+async function showReferralModal() {
+  const overlay = el('div', 'modal-overlay center')
+  overlay.innerHTML = `
+    <div class="modal-card" style="max-width:420px">
+      <button class="modal-close" id="refClose">✕</button>
+      <div style="text-align:center;margin-bottom:1rem">
+        <div style="font-size:2rem;margin-bottom:0.5rem">🎁</div>
+        <h2 style="font-size:1.2rem;font-weight:700;margin-bottom:0.5rem">Indique um amigo</h2>
+        <p style="color:var(--text2);font-size:0.875rem;line-height:1.6">Você e seu amigo ganham <strong style="color:#10b981">+7 dias Pro grátis</strong> cada um!</p>
+      </div>
+      <div id="refContent" style="text-align:center">
+        <div class="spinner" style="margin:2rem auto"></div>
+      </div>
+    </div>
+  `
+  document.body.appendChild(overlay)
+  document.getElementById('refClose').onclick = () => overlay.remove()
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove() }
+
+  try {
+    const data = await api('/api/referral/code')
+    document.getElementById('refContent').innerHTML = `
+      <div style="background:var(--card2);border-radius:10px;padding:1rem;margin-bottom:1rem">
+        <div style="font-size:0.8rem;color:var(--text2);margin-bottom:0.5rem">Seu link de indicação</div>
+        <div style="font-family:monospace;font-size:0.95rem;color:var(--primary);word-break:break-all">${data.url}</div>
+      </div>
+      <button class="btn btn-primary btn-full" id="refShare" style="margin-bottom:0.5rem">📤 Compartilhar link</button>
+      <button class="btn btn-ghost btn-full" id="refCopy">📋 Copiar link</button>
+      <p style="color:var(--text2);font-size:0.78rem;margin-top:1rem">Quando um amigo criar conta com seu link, ambos ganham 7 dias Pro!</p>
+    `
+    document.getElementById('refShare').onclick = () => {
+      if (navigator.share) navigator.share({ title: 'Decifra — estude para o ENEM', text: 'Estou usando o Decifra para estudar para o ENEM. Entre com meu link e ganhe 7 dias Pro grátis!', url: data.url }).catch(() => {})
+      else { navigator.clipboard?.writeText(data.url); toast('Link copiado!', 'success') }
+    }
+    document.getElementById('refCopy').onclick = () => {
+      navigator.clipboard?.writeText(data.url).then(() => toast('Link copiado! 🔗', 'success')).catch(() => toast(data.url, ''))
+    }
+  } catch {
+    document.getElementById('refContent').innerHTML = `<p style="color:var(--text2)">Erro ao carregar código. Tente novamente.</p>`
+  }
+}
+
+// ===== ADMIN =====
+function renderAdmin() {
+  document.getElementById('app').innerHTML = `
+    <div class="auth-screen">
+      <div class="auth-card" style="max-width:480px">
+        <div class="auth-logo">Decifra<span>.</span> Admin</div>
+        <div id="adminContent">
+          <input type="password" class="form-input" id="adminKey" placeholder="Chave admin" style="margin-bottom:12px">
+          <button class="btn btn-primary btn-full" id="adminLogin">Entrar</button>
+        </div>
+      </div>
+    </div>
+  `
+  document.getElementById('adminLogin').onclick = async () => {
+    const key = document.getElementById('adminKey').value
+    if (!key) return
+    const btn = document.getElementById('adminLogin')
+    btn.disabled = true; btn.textContent = 'Carregando...'
+    try {
+      const res = await fetch(`${API}/api/admin/stats`, { headers: { 'x-admin-key': key } })
+      if (!res.ok) throw new Error('Chave inválida')
+      const d = await res.json()
+      document.getElementById('adminContent').innerHTML = `
+        <h2 style="font-size:1.1rem;font-weight:700;margin-bottom:1rem;color:var(--text1)">Dashboard — ${new Date().toLocaleDateString('pt-BR')}</h2>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:1.25rem">
+          ${[
+            ['👥 Total usuários', d.total],
+            ['📅 Hoje', d.today],
+            ['📆 Esta semana', d.week],
+            ['🗓 Este mês', d.month],
+            ['🆓 Free', d.free],
+            ['⏳ Trial ativo', d.trialing],
+            ['⭐ Pro ativo', d.active],
+            ['💰 MRR estimado', `R$${d.mrr}`],
+            ['📈 Conversão', `${d.convRate}%`],
+            ['🔥 Com streak', d.withStreak],
+            ['⚡ XP médio', d.avgXp],
+            ['📝 Questões/user', d.avgQ],
+          ].map(([label, val]) => `
+            <div style="background:var(--card2);border-radius:10px;padding:0.875rem;text-align:center">
+              <div style="font-size:0.75rem;color:var(--text2);margin-bottom:0.25rem">${label}</div>
+              <div style="font-size:1.4rem;font-weight:800;color:var(--primary)">${val}</div>
+            </div>
+          `).join('')}
+        </div>
+        <a href="/app" class="btn btn-ghost btn-full">← Voltar ao app</a>
+      `
+    } catch (err) {
+      btn.disabled = false; btn.textContent = 'Entrar'
+      document.getElementById('adminKey').style.border = '1px solid #ef4444'
+      toast(err.message, 'error')
+    }
+  }
+  document.getElementById('adminKey').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('adminLogin').click() })
+}
+
+// ===== BLOG =====
+const BLOG_POSTS = [
+  {
+    slug: 'como-estudar-matematica-enem',
+    title: 'Como estudar Matemática para o ENEM: guia completo',
+    date: '2026-05-10',
+    description: 'As 5 estratégias mais eficientes para dominar a Matemática do ENEM, com foco nos tópicos mais cobrados.',
+    content: `
+      <p>A Matemática é uma das áreas que mais assusta os candidatos do ENEM. Mas com a estratégia certa, é possível melhorar significativamente sua nota.</p>
+      <h2>1. Conheça os tópicos mais cobrados</h2>
+      <p>Funções, geometria plana, probabilidade e estatística respondem por mais de 60% das questões de Matemática no ENEM. Priorize esses tópicos.</p>
+      <h2>2. Resolva questões antigas</h2>
+      <p>As provas anteriores do ENEM são o melhor material de estudo. O Decifra tem simulados baseados em questões reais dos últimos anos.</p>
+      <h2>3. Entenda, não decore</h2>
+      <p>O ENEM cobra raciocínio lógico, não memorização. Entenda o conceito por trás de cada fórmula.</p>
+      <h2>4. Use o tutor IA para tirar dúvidas</h2>
+      <p>Quando travar em alguma questão, o tutor do Decifra explica o raciocínio passo a passo em segundos.</p>
+      <h2>5. Pratique diariamente</h2>
+      <p>5 questões por dia são suficientes para criar o hábito e evoluir consistentemente até o ENEM.</p>
+    `
+  },
+  {
+    slug: 'redacao-enem-como-tirar-1000',
+    title: 'Redação ENEM: como tirar 1000 — o guia definitivo',
+    date: '2026-05-12',
+    description: 'Entenda as 5 competências avaliadas na redação do ENEM e veja exemplos práticos para alcançar a nota máxima.',
+    content: `
+      <p>A nota 1000 na redação do ENEM é o sonho de muitos candidatos. Entender as 5 competências é o primeiro passo.</p>
+      <h2>As 5 competências avaliadas</h2>
+      <ol>
+        <li><strong>Domínio da norma culta:</strong> Gramática, ortografia e pontuação corretas.</li>
+        <li><strong>Compreensão do tema:</strong> Abordagem dentro do recorte temático proposto.</li>
+        <li><strong>Seleção de argumentos:</strong> Argumentos pertinentes e coerentes para defender o ponto de vista.</li>
+        <li><strong>Coesão e coerência:</strong> Uso correto de conectivos e progressão lógica das ideias.</li>
+        <li><strong>Proposta de intervenção:</strong> Solução detalhada com agente, ação, modo, efeito e finalidade.</li>
+      </ol>
+      <h2>Estrutura ideal</h2>
+      <p>Introdução (2 parágrafos) → Desenvolvimento (2 parágrafos com argumentos) → Conclusão com proposta de intervenção.</p>
+      <h2>Use o Decifra para praticar</h2>
+      <p>O Decifra corrige sua redação com nota 0-1000 em cada competência e dá feedback específico para você melhorar.</p>
+    `
+  },
+  {
+    slug: 'plano-de-estudos-enem-3-meses',
+    title: 'Plano de estudos para o ENEM em 3 meses',
+    date: '2026-05-14',
+    description: 'Um cronograma realista e eficiente para quem tem apenas 3 meses para se preparar para o ENEM.',
+    content: `
+      <p>Com 3 meses de preparação focada, é possível melhorar consideravelmente sua nota no ENEM. Veja como organizar seu tempo.</p>
+      <h2>Mês 1 — Diagnóstico e base</h2>
+      <p>Faça o diagnóstico completo para identificar seus pontos fracos. Dedique 70% do tempo às matérias mais deficitárias.</p>
+      <h2>Mês 2 — Questões e prática</h2>
+      <p>Resolva pelo menos 200 questões de simulados. Use o tutor IA para entender os erros imediatamente.</p>
+      <h2>Mês 3 — Revisão e simulados completos</h2>
+      <p>Foque nos pontos que ainda erram mais. Faça pelo menos 2 simulados completos para treinar resistência.</p>
+      <h2>Dica: use o Decifra</h2>
+      <p>O plano de estudos do Decifra cria um cronograma semanal personalizado baseado na sua prova e data-alvo.</p>
+    `
+  },
+]
+
+function renderBlogIndex() {
+  document.getElementById('app').innerHTML = `
+    <div style="max-width:680px;margin:0 auto;padding:2rem 1rem;font-family:sans-serif;color:#f9fafb;background:#0a0f1e;min-height:100vh">
+      <a href="/" style="color:#3b82f6;text-decoration:none;font-size:0.875rem">← Decifra</a>
+      <h1 style="font-size:2rem;font-weight:800;margin:1.5rem 0 0.5rem;color:#f9fafb">Blog</h1>
+      <p style="color:#9ca3af;margin-bottom:2rem">Dicas e estratégias para o ENEM, vestibulares e concursos.</p>
+      ${BLOG_POSTS.map(p => `
+        <a href="/blog/${p.slug}" style="display:block;background:#111827;border:1px solid #1e2d4a;border-radius:12px;padding:1.25rem;margin-bottom:1rem;text-decoration:none;color:inherit;transition:border-color 0.2s" onmouseover="this.style.borderColor='#3b82f6'" onmouseout="this.style.borderColor='#1e2d4a'">
+          <div style="font-size:0.8rem;color:#6b7280;margin-bottom:0.5rem">${new Date(p.date).toLocaleDateString('pt-BR', { day:'2-digit', month:'long', year:'numeric' })}</div>
+          <h2 style="font-size:1.1rem;font-weight:700;color:#f9fafb;margin-bottom:0.5rem">${p.title}</h2>
+          <p style="color:#9ca3af;font-size:0.875rem;margin:0;line-height:1.6">${p.description}</p>
+        </a>
+      `).join('')}
+      <div style="margin-top:2rem;padding:1.5rem;background:#111827;border-radius:12px;text-align:center">
+        <div style="font-size:1.5rem;margin-bottom:0.5rem">📚</div>
+        <div style="font-weight:700;margin-bottom:0.5rem">Estude com o Decifra</div>
+        <p style="color:#9ca3af;font-size:0.875rem;margin-bottom:1rem">Simulados, tutor IA, flashcards e muito mais.</p>
+        <a href="/app" style="background:#3b82f6;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:700">Começar grátis →</a>
+      </div>
+    </div>
+  `
+}
+
+function renderBlogPost(slug) {
+  const post = BLOG_POSTS.find(p => p.slug === slug)
+  if (!post) { document.getElementById('app').innerHTML = `<div style="text-align:center;padding:4rem;color:#9ca3af">Artigo não encontrado. <a href="/blog" style="color:#3b82f6">← Ver todos</a></div>`; return }
+  document.getElementById('app').innerHTML = `
+    <div style="max-width:680px;margin:0 auto;padding:2rem 1rem;font-family:sans-serif;color:#f9fafb;background:#0a0f1e;min-height:100vh">
+      <a href="/blog" style="color:#3b82f6;text-decoration:none;font-size:0.875rem">← Blog</a>
+      <div style="font-size:0.8rem;color:#6b7280;margin:1rem 0 0.5rem">${new Date(post.date).toLocaleDateString('pt-BR', { day:'2-digit', month:'long', year:'numeric' })}</div>
+      <h1 style="font-size:1.75rem;font-weight:800;margin-bottom:1.5rem;line-height:1.3">${post.title}</h1>
+      <div style="color:#d1d5db;line-height:1.8;font-size:1rem">${post.content}</div>
+      <div style="margin-top:2.5rem;padding:1.5rem;background:#111827;border-radius:12px;text-align:center">
+        <div style="font-weight:700;margin-bottom:0.5rem">Pratique com o Decifra 📚</div>
+        <p style="color:#9ca3af;font-size:0.875rem;margin-bottom:1rem">Simulados, tutor IA e flashcards para o ENEM.</p>
+        <a href="/app" style="background:#3b82f6;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:700">Começar grátis →</a>
+      </div>
+    </div>
+  `
+}
+
 // ===== INIT =====
 async function init() {
   const app = document.getElementById('app')
@@ -2848,10 +3186,15 @@ async function init() {
 
   // Handle public profile route /perfil/:userId
   const perfilMatch = window.location.pathname.match(/^\/perfil\/([^/]+)$/)
-  if (perfilMatch) {
-    renderPerfilPublico(perfilMatch[1])
-    return
-  }
+  if (perfilMatch) { renderPerfilPublico(perfilMatch[1]); return }
+
+  // Handle admin route
+  if (window.location.pathname === '/admin') { renderAdmin(); return }
+
+  // Handle blog routes
+  const blogMatch = window.location.pathname.match(/^\/blog\/([^/]+)$/)
+  if (blogMatch) { renderBlogPost(blogMatch[1]); return }
+  if (window.location.pathname === '/blog') { renderBlogIndex(); return }
 
   // Handle password reset link (Supabase redirects with #access_token=...&type=recovery)
   const hashParams = new URLSearchParams(window.location.hash.replace('#', ''))
@@ -2864,6 +3207,13 @@ async function init() {
 
   const stripeSuccess = urlParams.get('success') === '1'
   if (stripeSuccess) history.replaceState(null, '', '/app')
+
+  // Save referral code from URL
+  const refCode = urlParams.get('ref')
+  if (refCode) {
+    localStorage.setItem('decifra_pending_ref', refCode)
+    history.replaceState(null, '', '/app')
+  }
 
   // Check existing session
   const token = localStorage.getItem('decifra_token')
@@ -2887,6 +3237,10 @@ async function init() {
       renderApp()
       checkDailyNotification()
       if (stripeSuccess) toast('Assinatura ativada! Aproveite o Pro 🎉', 'success')
+      else {
+        checkTrialExpired()
+        checkStreakLost()
+      }
     } catch {
       localStorage.removeItem('decifra_token')
       renderAuth('login')
