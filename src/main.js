@@ -851,12 +851,20 @@ function answerQuestaoHoje(idx, q) {
   })
   const fb = document.getElementById('qdFeedback')
   if (fb) {
+    const subj = SUBJECTS.find(s => s.id === q.subject)
     fb.innerHTML = `
       <div class="quiz-explanation">
         <strong>${isCorrect ? '✅ Correto!' : '❌ Errado'}</strong>
         ${q.explanation}
+        <button id="qdShare" style="margin-top:0.75rem;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:0.4rem 0.85rem;font-size:0.78rem;cursor:pointer;color:var(--text2);display:flex;align-items:center;gap:0.4rem">📤 Compartilhar questão</button>
       </div>
     `
+    document.getElementById('qdShare')?.addEventListener('click', () => {
+      const emoji = subj?.emoji || '📚'
+      const txt = `${emoji} Questão de ${subj?.label || q.subject} (${q.source || 'ENEM'} ${q.year || ''})\n\n${q.question.slice(0, 120)}...\n\n${isCorrect ? '✅ Acertei!' : '📖 Aprendi!'}\n\nEstude no Decifra: ${window.location.origin}/app`
+      if (navigator.share) navigator.share({ title: 'Decifra — Questão do dia', text: txt }).catch(() => {})
+      else { navigator.clipboard?.writeText(txt); toast('Copiado para compartilhar! 📋', 'success') }
+    })
   }
   if (isCorrect) {
     state.progresso.correct = (state.progresso.correct || 0) + 1
@@ -915,6 +923,7 @@ function renderTutor(container) {
       ${limitBar}
       <div class="tutor-messages" id="tutorMessages"></div>
       <div class="tutor-input-area">
+        <button class="practice-btn" id="tutorMapa" title="Gerar mapa mental" style="font-size:0.75rem;min-width:32px">🗺️</button>
         <button class="practice-btn" id="tutorPractice" title="Gerar questão de prática">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
         </button>
@@ -964,6 +973,50 @@ function renderTutor(container) {
   }
 
   document.getElementById('tutorPractice').onclick = () => generatePracticeQuestion(container)
+  document.getElementById('tutorMapa').onclick = () => showMapaMental()
+}
+
+async function showMapaMental() {
+  const subj = SUBJECTS.find(s => s.id === state.tutor.subject)
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.innerHTML = `
+    <div class="modal-card" style="max-width:520px;max-height:80vh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <h2 style="font-size:1.1rem;font-weight:700">🗺️ Mapa Mental — ${subj?.label}</h2>
+        <button id="mapaClose" style="background:none;border:none;color:var(--text2);font-size:1.2rem;cursor:pointer">✕</button>
+      </div>
+      <div style="margin-bottom:1rem">
+        <input id="mapaTopico" class="form-input" placeholder="Tópico (ex: Fotossíntese, Lei de Newton, Romantismo...)" style="margin-bottom:0.5rem">
+        <button class="btn btn-primary btn-full" id="mapaGerar">Gerar mapa</button>
+      </div>
+      <div id="mapaResult" style="font-size:0.83rem;line-height:1.7;white-space:pre-wrap;color:var(--text2);background:var(--surface2);border-radius:10px;padding:1rem;display:none"></div>
+    </div>
+  `
+  document.body.appendChild(overlay)
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove() }
+  document.getElementById('mapaClose').onclick = () => overlay.remove()
+  document.getElementById('mapaGerar').onclick = async () => {
+    const topic = document.getElementById('mapaTopico').value.trim()
+    if (!topic) return
+    const btn = document.getElementById('mapaGerar')
+    const result = document.getElementById('mapaResult')
+    btn.disabled = true; btn.textContent = 'Gerando...'
+    result.style.display = 'none'
+    try {
+      const data = await api('/api/tutor/mapa-mental', { topic, subject: subj?.label })
+      result.textContent = data.mapa
+      result.style.display = 'block'
+      btn.textContent = '🔄 Gerar outro'
+    } catch {
+      toast('Erro ao gerar mapa. Tente novamente.', 'error')
+      btn.textContent = 'Gerar mapa'
+    }
+    btn.disabled = false
+  }
+  document.getElementById('mapaTopico').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('mapaGerar').click()
+  })
 }
 
 async function generatePracticeQuestion(container) {
@@ -1065,6 +1118,18 @@ function renderSimulados(container) {
         </div>
       </div>
       <div class="simulado-types">
+        <div class="simulado-type-card" data-type="adaptativo" style="border-color:rgba(16,185,129,0.4);background:rgba(16,185,129,0.05)">
+          <div class="simulado-type-info">
+            <h3>🎯 Adaptativo</h3>
+            <p>Foca nas suas matérias mais fracas · IA analisa seu histórico</p>
+            <div class="simulado-meta">
+              <span class="meta-chip">⏱ ~15 min</span>
+              <span class="meta-chip">10 questões</span>
+              <span class="meta-chip" style="color:#10b981">Personalizado</span>
+            </div>
+          </div>
+          <div class="simulado-type-icon">🧠</div>
+        </div>
         <div class="simulado-type-card" data-type="mini">
           <div class="simulado-type-info">
             <h3>Mini-simulado</h3>
@@ -1213,7 +1278,7 @@ function renderSimulados(container) {
       ${(() => {
         const hist = loadSimuladoHistory()
         if (!hist.length) return ''
-        const typeNames = { mini: 'Mini', enem: 'ENEM', enem_completo: 'ENEM Completo', vestibular: 'Vestibular', fuvest: 'FUVEST', unicamp: 'UNICAMP', concurso: 'Concurso', concurso_federal: 'C.Federal', militar: 'Militar', ia: 'IA ✨', vestibular_ia: 'IA Vest.', concurso_ia: 'IA Conc.' }
+        const typeNames = { mini: 'Mini', adaptativo: '🎯 Adaptativo', enem: 'ENEM', enem_completo: 'ENEM Completo', vestibular: 'Vestibular', fuvest: 'FUVEST', unicamp: 'UNICAMP', concurso: 'Concurso', concurso_federal: 'C.Federal', militar: 'Militar', ia: 'IA ✨', vestibular_ia: 'IA Vest.', concurso_ia: 'IA Conc.' }
         const items = hist.slice(0, 5).map(h => {
           const color = h.pct >= 70 ? '#10b981' : h.pct >= 50 ? '#f59e0b' : '#ef4444'
           const d = new Date(h.date)
@@ -1253,7 +1318,7 @@ function renderSimulados(container) {
   container.querySelectorAll('[data-type]').forEach(card => {
     card.onclick = () => {
       const type = card.dataset.type
-      if (type !== 'mini' && !isPro()) { renderUpgradeModal(); return }
+      if (type !== 'mini' && type !== 'adaptativo' && !isPro()) { renderUpgradeModal(); return }
       const isIaType = type === 'ia' || type.endsWith('_ia')
       if (isIaType) {
         const content = document.getElementById('appContent')
@@ -1554,6 +1619,23 @@ async function finishSimulado() {
       checkAndShowNewBadges()
     })
     .catch(() => {})
+
+  // Submit challenge result if this is a challenge simulado
+  if (state.simulado._challengeId) {
+    const elapsed = state.simulado.timeLeft != null ? (state.simulado._challengeData?.timeLimit || 900) - state.simulado.timeLeft : 0
+    api(`/api/challenge/${state.simulado._challengeId}/submit`, {
+      answers: state.simulado.answers,
+      timeTaken: elapsed
+    }).then(res => {
+      if (res?.creatorScore || res?.challengerScore) {
+        setTimeout(() => {
+          const app = document.getElementById('app')
+          if (app) renderDesafioResult(app, { ...state.simulado._challengeData, creatorScore: res.creatorScore, challengerScore: res.challengerScore }, state.user?.id)
+        }, 3000)
+      }
+    }).catch(() => {})
+  }
+
   renderTab('simulados')
 }
 
@@ -1683,6 +1765,9 @@ function renderGabarito(container) {
         <div style="font-size:0.85rem;line-height:1.5;margin-bottom:0.75rem;color:var(--text)">${q.question}</div>
         <div>${opts}</div>
         ${q.explanation ? `<div style="margin-top:0.5rem;padding:0.5rem;background:rgba(59,130,246,0.08);border-radius:8px;font-size:0.8rem;color:var(--text2);line-height:1.5"><strong style="color:var(--primary)">Explicação:</strong> ${q.explanation}</div>` : ''}
+        <div style="margin-top:0.5rem">
+          <textarea class="nota-questao" data-qid="${q.id || i}" placeholder="📝 Minha anotação..." rows="2" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:0.4rem 0.6rem;font-size:0.78rem;color:var(--text2);resize:vertical;font-family:inherit;box-sizing:border-box">${loadLocal('nota_q_' + (q.id || i)) || ''}</textarea>
+        </div>
       </div>
     `
   }).join('')
@@ -1700,6 +1785,9 @@ function renderGabarito(container) {
   `
   document.getElementById('gabBack').onclick = () => { state.simulado.screen = 'result'; renderTab('simulados') }
   document.getElementById('gabNewSim').onclick = () => { state.simulado.screen = 'menu'; renderTab('simulados') }
+  container.querySelectorAll('.nota-questao').forEach(ta => {
+    ta.addEventListener('input', () => saveLocal('nota_q_' + ta.dataset.qid, ta.value))
+  })
 }
 
 // ===== TAB: PROGRESSO =====
@@ -2049,6 +2137,7 @@ function renderMais(container) {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.75rem">
         <button class="btn btn-ghost btn-full" id="maisSharePerfil" style="font-size:0.82rem">🔗 Meu perfil</button>
         <button class="btn btn-ghost btn-full" id="maisReferral" style="font-size:0.82rem">🎁 Indicar amigo</button>
+        <button class="btn btn-ghost btn-full" id="maisDesafio" style="font-size:0.82rem;grid-column:span 2">⚔️ Desafiar um amigo</button>
       </div>
 
       ${!isPro() ? `
@@ -2164,6 +2253,7 @@ function renderMais(container) {
   })
 
   document.getElementById('maisReferral')?.addEventListener('click', () => showReferralModal())
+  document.getElementById('maisDesafio')?.addEventListener('click', () => showDesafioModal())
   document.getElementById('maisUpgrade')?.addEventListener('click', () => renderUpgradeModal())
   document.getElementById('maisPortal')?.addEventListener('click', async () => {
     const btn = document.getElementById('maisPortal')
@@ -2669,6 +2759,7 @@ function renderRedacaoResult(container, c, textoOriginal, temaOriginal) {
         <button class="btn btn-outline" id="redacaoNova" style="flex:1">Nova redação</button>
         <button class="btn btn-ghost" id="redacaoShare" style="flex:1">📤 Compartilhar</button>
       </div>
+      ${'speechSynthesis' in window ? `<button class="btn btn-ghost btn-full" id="redacaoTTS" style="margin-top:0.5rem">🔊 Ouvir feedback</button>` : ''}
     </div>
   `
   document.getElementById('redacaoBack2').onclick = () => switchTab('mais')
@@ -2677,6 +2768,21 @@ function renderRedacaoResult(container, c, textoOriginal, temaOriginal) {
     const temaText = temaOriginal ? ` sobre "${temaOriginal}"` : ''
     shareResult(`Tirei ${nota} na redação ENEM${temaText} pelo Decifra! ✍️ Corrija a sua grátis em`)
   }
+  document.getElementById('redacaoTTS')?.addEventListener('click', () => {
+    if (speechSynthesis.speaking) { speechSynthesis.cancel(); return }
+    const btn = document.getElementById('redacaoTTS')
+    const comp = (c.competencias || []).map(cc => `${cc.nome}: ${cc.nota} de 200 pontos. ${cc.comentario}`).join('. ')
+    const pontos = (c.pontos_fortes || []).join('. ')
+    const melh = (c.melhorias || []).join('. ')
+    const txt = `Sua nota foi ${nota} pontos. ${c.resumo || ''}. Competências: ${comp}. Pontos fortes: ${pontos}. Melhorias: ${melh}.`
+    const utter = new SpeechSynthesisUtterance(txt)
+    utter.lang = 'pt-BR'; utter.rate = 0.95
+    const voices = speechSynthesis.getVoices().filter(v => v.lang.startsWith('pt'))
+    if (voices.length) utter.voice = voices[0]
+    utter.onstart = () => { btn.textContent = '⏹ Parar'; btn.style.color = '#ef4444' }
+    utter.onend = () => { btn.textContent = '🔊 Ouvir feedback'; btn.style.color = '' }
+    speechSynthesis.speak(utter)
+  })
 }
 
 // ===== TAB: FLASHCARDS =====
@@ -3170,6 +3276,115 @@ function showStreakLostModal(lostStreak) {
   overlay.onclick = e => { if (e.target === overlay) overlay.remove() }
 }
 
+// ===== DESAFIO ENTRE AMIGOS =====
+async function showDesafioModal() {
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.innerHTML = `
+    <div class="modal-card" style="max-width:420px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <h2 style="font-size:1.1rem;font-weight:700">⚔️ Desafiar um amigo</h2>
+        <button id="desafioClose" style="background:none;border:none;color:var(--text2);font-size:1.2rem;cursor:pointer">✕</button>
+      </div>
+      <p style="color:var(--text2);font-size:0.875rem;line-height:1.6;margin-bottom:1.25rem">Gere um link de desafio com 10 questões. Seu amigo faz o mesmo simulado e vocês comparam resultados!</p>
+      <div id="desafioContent">
+        <button class="btn btn-primary btn-full" id="desafioCriar">⚔️ Criar desafio</button>
+      </div>
+    </div>
+  `
+  document.body.appendChild(overlay)
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove() }
+  document.getElementById('desafioClose').onclick = () => overlay.remove()
+  document.getElementById('desafioCriar').onclick = async () => {
+    const btn = document.getElementById('desafioCriar')
+    btn.disabled = true; btn.textContent = 'Gerando...'
+    try {
+      const data = await api('/api/challenge/create', { type: 'mini' })
+      document.getElementById('desafioContent').innerHTML = `
+        <div style="background:var(--card2);border-radius:10px;padding:1rem;margin-bottom:0.75rem">
+          <div style="font-size:0.75rem;color:var(--text2);margin-bottom:0.4rem">Link do desafio (válido 7 dias)</div>
+          <div style="font-family:monospace;font-size:0.85rem;color:var(--primary);word-break:break-all">${data.url}</div>
+        </div>
+        <div style="font-size:0.78rem;color:var(--text2);margin-bottom:0.75rem">10 questões · ${Math.round(data.timeLimit/60)} min · você e seu amigo fazem o mesmo simulado</div>
+        <button class="btn btn-primary btn-full" id="desafioShare" style="margin-bottom:0.5rem">📤 Compartilhar desafio</button>
+        <button class="btn btn-ghost btn-full" id="desafioCopy">📋 Copiar link</button>
+      `
+      document.getElementById('desafioShare').onclick = () => {
+        if (navigator.share) navigator.share({ title: 'Desafio no Decifra!', text: 'Te desafio num simulado de 10 questões! Quem acerta mais? 🎯', url: data.url }).catch(() => {})
+        else { navigator.clipboard?.writeText(data.url); toast('Link copiado! 🔗', 'success') }
+      }
+      document.getElementById('desafioCopy').onclick = () => {
+        navigator.clipboard?.writeText(data.url).then(() => toast('Link copiado! 🔗', 'success')).catch(() => {})
+      }
+    } catch (err) {
+      toast(err.message || 'Erro ao criar desafio', 'error')
+      btn.disabled = false; btn.textContent = '⚔️ Criar desafio'
+    }
+  }
+}
+
+async function renderDesafio(challengeId) {
+  const app = document.getElementById('app')
+  app.innerHTML = `<div class="loading-screen"><div class="loading-logo">Decifra<span>.</span></div><div class="spinner"></div><p style="color:var(--text2);font-size:0.875rem">Carregando desafio...</p></div>`
+  try {
+    const data = await fetch(`${API}/api/challenge/${challengeId}`).then(r => r.json())
+    if (data.error) { app.innerHTML = `<div class="auth-screen"><div class="auth-card"><p style="color:#ef4444">${data.error}</p><a href="/app" class="btn btn-primary btn-full" style="margin-top:1rem">Entrar no app</a></div></div>`; return }
+
+    if (!state.token) {
+      app.innerHTML = `<div class="auth-screen"><div class="auth-card" style="max-width:400px">
+        <div class="auth-logo">Decifra<span>.</span></div>
+        <h2 style="font-size:1.1rem;margin-bottom:0.5rem">⚔️ ${data.creatorName} te desafiou!</h2>
+        <p style="color:var(--text2);font-size:0.875rem;margin-bottom:1.25rem">Faça login ou crie sua conta para aceitar o desafio de 10 questões.</p>
+        <a href="/app" class="btn btn-primary btn-full">Entrar e aceitar desafio →</a>
+      </div></div>`
+      return
+    }
+
+    // Já tem resultado do criador?
+    const myId = state.user?.id
+    const iCreated = myId && data.creatorScore?.userId === myId
+    const alreadySubmitted = iCreated ? !!data.creatorScore : !!data.challengerScore
+    if (alreadySubmitted) {
+      renderDesafioResult(app, data, myId)
+      return
+    }
+
+    // Start challenge simulado
+    state.simulado = { screen: 'quiz', type: 'desafio', questions: data.questions, current: 0, answers: new Array(data.questions.length).fill(-1), timeLeft: data.timeLimit, timer: null, score: null, loading: false, questionTimes: [], questionStartTime: Date.now(), _challengeId: challengeId, _challengeData: data }
+    renderApp()
+    setTimeout(() => {
+      switchTab('simulados')
+      renderTab('simulados')
+    }, 50)
+  } catch {
+    app.innerHTML = `<div class="auth-screen"><div class="auth-card"><p>Erro ao carregar desafio.</p><a href="/app" class="btn btn-primary btn-full" style="margin-top:1rem">Voltar</a></div></div>`
+  }
+}
+
+function renderDesafioResult(container, data, myId) {
+  const cs = data.creatorScore
+  const chs = data.challengerScore
+  const html = `<div class="auth-screen"><div class="auth-card" style="max-width:480px">
+    <div class="auth-logo">Decifra<span>.</span> ⚔️</div>
+    <h2 style="font-size:1.1rem;margin-bottom:1rem">Resultado do desafio</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:1.25rem">
+      <div style="background:var(--card2);border-radius:12px;padding:1rem;text-align:center">
+        <div style="font-size:0.75rem;color:var(--text2);margin-bottom:0.25rem">${data.creatorName || 'Criador'}</div>
+        <div style="font-size:2rem;font-weight:900;color:var(--primary)">${cs ? cs.pct + '%' : '—'}</div>
+        <div style="font-size:0.75rem;color:var(--text3)">${cs ? cs.correct + '/' + cs.total : 'Aguardando'}</div>
+      </div>
+      <div style="background:var(--card2);border-radius:12px;padding:1rem;text-align:center">
+        <div style="font-size:0.75rem;color:var(--text2);margin-bottom:0.25rem">Desafiado</div>
+        <div style="font-size:2rem;font-weight:900;color:#10b981">${chs ? chs.pct + '%' : '—'}</div>
+        <div style="font-size:0.75rem;color:var(--text3)">${chs ? chs.correct + '/' + chs.total : 'Aguardando'}</div>
+      </div>
+    </div>
+    ${cs && chs ? `<div style="text-align:center;font-size:1rem;font-weight:700;margin-bottom:1rem">${cs.pct > chs.pct ? '🏆 ' + (data.creatorName || 'Criador') + ' venceu!' : chs.pct > cs.pct ? '🏆 Desafiado venceu!' : '🤝 Empate!'}</div>` : '<p style="color:var(--text2);text-align:center;font-size:0.875rem">Aguardando o outro participante...</p>'}
+    <a href="/app" class="btn btn-primary btn-full">Voltar ao app</a>
+  </div></div>`
+  container.innerHTML = html
+}
+
 // ===== REFERRAL MODAL =====
 async function showReferralModal() {
   const overlay = el('div', 'modal-overlay center')
@@ -3485,6 +3700,10 @@ async function init() {
   // Handle public profile route /perfil/:userId
   const perfilMatch = window.location.pathname.match(/^\/perfil\/([^/]+)$/)
   if (perfilMatch) { renderPerfilPublico(perfilMatch[1]); return }
+
+  // Handle challenge route /desafio/:id
+  const desafioMatch = window.location.pathname.match(/^\/desafio\/([^/]+)$/)
+  if (desafioMatch) { await renderDesafio(desafioMatch[1]); return }
 
   // Handle admin route
   if (window.location.pathname === '/admin') { renderAdmin(); return }
