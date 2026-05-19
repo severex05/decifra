@@ -540,6 +540,13 @@ const ONBOARDING_STEPS = [
     options: ['Matemática', 'Português / Redação', 'Ciências da Natureza', 'Ciências Humanas', 'Inglês / Língua Estrangeira', 'Raciocínio Lógico', 'Todas precisam melhorar'],
     key: 'fraqueza'
   },
+  {
+    icon: '🏆',
+    title: 'Qual nota você quer atingir?',
+    text: 'Isso vai calibrar a dificuldade das questões e o seu plano de metas.',
+    options: ['500+ (acesso básico)', '600+ (maioria das universidades)', '700+ (cursos concorridos)', '800+ (medicina, direito USP)', '900+ (top 1%)', 'Ainda não sei'],
+    key: 'notaMeta'
+  },
 ]
 
 function renderOnboarding() {
@@ -644,6 +651,8 @@ function renderApp() {
 
   renderTab(state.tab)
   if (state.deferredInstall) renderInstallBanner()
+  // Show Pomodoro float button
+  setTimeout(() => renderPomodoroFloat(), 500)
 }
 
 function switchTab(id) {
@@ -666,6 +675,7 @@ function renderTab(id) {
     case 'plano':       renderPlanoEstudo(content); break
     case 'redacao':     renderRedacao(content); break
     case 'flashcards':  renderFlashcards(content); break
+    case 'treino':      renderTreino(content); break
   }
 }
 
@@ -969,7 +979,7 @@ function renderTutor(container) {
   sendBtn.onclick = () => sendTutorMessage()
 
   if (document.getElementById('tutorUpgrade')) {
-    document.getElementById('tutorUpgrade').onclick = () => renderUpgradeModal()
+    document.getElementById('tutorUpgrade').onclick = () => renderUpgradeModal('tutor')
   }
 
   document.getElementById('tutorPractice').onclick = () => generatePracticeQuestion(container)
@@ -1064,7 +1074,7 @@ async function sendTutorMessage() {
   if (!text || state.tutor.loading) return
 
   if (!isPro() && state.tutor.used >= state.tutor.limit) {
-    renderUpgradeModal()
+    renderUpgradeModal('tutor')
     return
   }
 
@@ -1103,6 +1113,151 @@ async function sendTutorMessage() {
   if (m2) renderMessages(m2)
 }
 
+// ===== MODO TREINO POR TÓPICO =====
+const treino = { subject: 'matematica', questions: [], current: 0, answered: false, correct: 0, total: 0, loading: false, selectedIdx: -1 }
+
+async function startTreino(subject) {
+  treino.subject = subject
+  treino.loading = true
+  treino.questions = []
+  treino.current = 0
+  treino.answered = false
+  treino.correct = 0
+  treino.total = 0
+  treino.selectedIdx = -1
+  const content = document.getElementById('appContent')
+  if (content) content.innerHTML = `<div class="loading-screen"><div class="loading-logo">Decifra<span>.</span></div><div class="spinner"></div><p style="color:var(--text2);font-size:0.875rem">Carregando questões...</p></div>`
+  try {
+    const data = await api('/api/simulado/start', { type: 'mini', subject })
+    treino.questions = data.questions || []
+    treino.current = 0
+    treino.answered = false
+    treino.loading = false
+    renderTab('treino')
+  } catch {
+    toast('Erro ao carregar questões. Tente novamente.', 'error')
+    renderTab('simulados')
+  }
+}
+
+function renderTreino(container) {
+  if (treino.loading || !treino.questions.length) {
+    container.innerHTML = `
+      <div class="simulado-screen">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">Modo Treino</div>
+            <div class="panel-sub">Pratique por matéria sem pressão de tempo</div>
+          </div>
+        </div>
+        <div class="simulado-types">
+          ${SUBJECTS.map(s => `
+            <div class="simulado-type-card treino-subj-card" data-subj="${s.id}" style="border-color:${s.color}33;background:${s.color}08">
+              <div class="simulado-type-info">
+                <h3>${s.emoji} ${s.label}</h3>
+                <p>Questões do banco · Resposta imediata · Sem timer</p>
+                <div class="simulado-meta">
+                  <span class="meta-chip">Sem limite de tempo</span>
+                  <span class="meta-chip" style="color:${s.color}">Gratuito</span>
+                </div>
+              </div>
+              <div class="simulado-type-icon" style="font-size:1.5rem">${s.emoji}</div>
+            </div>
+          `).join('')}
+        </div>
+        <button class="btn btn-ghost btn-full" id="treinoBack" style="margin-top:1rem">← Voltar</button>
+      </div>
+    `
+    container.querySelectorAll('.treino-subj-card').forEach(card => {
+      card.onclick = () => startTreino(card.dataset.subj)
+    })
+    document.getElementById('treinoBack')?.addEventListener('click', () => switchTab('simulados'))
+    return
+  }
+
+  const q = treino.questions[treino.current]
+  if (!q) {
+    const pct = treino.total > 0 ? Math.round((treino.correct / treino.total) * 100) : 0
+    const color = pct >= 70 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444'
+    const s = SUBJECTS.find(x => x.id === treino.subject)
+    container.innerHTML = `
+      <div class="plano-screen">
+        <div class="card" style="text-align:center;margin-bottom:1rem">
+          <div style="font-size:2.5rem;font-weight:900;color:${color}">${pct}%</div>
+          <div style="font-size:0.875rem;color:var(--text2);margin-bottom:0.5rem">${treino.correct} de ${treino.total} corretas · ${s?.label}</div>
+          ${pct >= 70 ? '<div>Ótimo desempenho! 🎉</div>' : pct >= 50 ? '<div>Bom! Continue praticando. 📈</div>' : '<div>Continue praticando! 💪</div>'}
+        </div>
+        <button class="btn btn-primary btn-full" id="treinoNovamente" style="margin-bottom:0.5rem">Treinar novamente</button>
+        <button class="btn btn-ghost btn-full" id="treinoOutra">Outra matéria</button>
+        <button class="btn btn-ghost btn-full" id="treinoVoltar" style="margin-top:0.5rem">← Simulados</button>
+      </div>
+    `
+    document.getElementById('treinoNovamente').onclick = () => startTreino(treino.subject)
+    document.getElementById('treinoOutra').onclick = () => { treino.questions = []; renderTab('treino') }
+    document.getElementById('treinoVoltar').onclick = () => switchTab('simulados')
+    return
+  }
+
+  const s = SUBJECTS.find(x => x.id === treino.subject)
+  const answered = treino.answered
+  const selectedIdx = treino.selectedIdx
+
+  container.innerHTML = `
+    <div class="plano-screen">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+        <button class="btn btn-ghost btn-sm" id="treinoSair">← Sair</button>
+        <div style="font-size:0.8rem;color:var(--text2)">${s?.emoji} ${s?.label} · ${treino.current + 1}/${treino.questions.length}</div>
+        <div style="font-size:0.8rem;font-weight:700;color:#10b981">${treino.correct} certas</div>
+      </div>
+      <div style="height:4px;background:var(--surface2);border-radius:2px;overflow:hidden;margin-bottom:1rem">
+        <div style="height:100%;width:${Math.round((treino.current / treino.questions.length) * 100)}%;background:#3b82f6;border-radius:2px"></div>
+      </div>
+      <div class="card" style="margin-bottom:1rem">
+        <p style="font-size:0.9rem;line-height:1.65;margin:0">${q.question}</p>
+      </div>
+      <div>
+        ${q.options.map((opt, i) => {
+          let btnStyle = 'background:var(--surface);border:2px solid var(--border);border-radius:10px;padding:0.75rem 1rem;margin-bottom:0.5rem;cursor:pointer;display:flex;align-items:flex-start;gap:0.75rem;font-size:0.875rem;width:100%;text-align:left;line-height:1.4'
+          if (answered) {
+            if (i === q.answerIndex) btnStyle += ';border-color:#10b981;background:rgba(16,185,129,0.08);color:#10b981'
+            else if (i === selectedIdx && i !== q.answerIndex) btnStyle += ';border-color:#ef4444;background:rgba(239,68,68,0.08);color:#ef4444'
+          }
+          const letter = String.fromCharCode(65 + i)
+          return `<button class="treino-opt" data-idx="${i}" style="${btnStyle}" ${answered ? 'disabled' : ''}><strong style="min-width:1.2rem;opacity:0.5">${letter}</strong>${opt}</button>`
+        }).join('')}
+      </div>
+      ${answered ? `
+      <div class="card" style="margin-top:0.75rem;border-color:${selectedIdx === q.answerIndex ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'};background:${selectedIdx === q.answerIndex ? 'rgba(16,185,129,0.05)' : 'rgba(239,68,68,0.05)'}">
+        <div style="font-weight:700;margin-bottom:0.5rem;color:${selectedIdx === q.answerIndex ? '#10b981' : '#ef4444'}">${selectedIdx === q.answerIndex ? '✅ Correto!' : '❌ Incorreto'}</div>
+        <p style="font-size:0.82rem;color:var(--text2);margin:0;line-height:1.55">${q.explanation || 'Veja a alternativa correta acima.'}</p>
+      </div>
+      <button class="btn btn-primary btn-full" id="treinoProxima" style="margin-top:0.75rem">${treino.current < treino.questions.length - 1 ? 'Próxima →' : 'Ver resultado →'}</button>
+      ` : ''}
+    </div>
+  `
+
+  container.querySelectorAll('.treino-opt').forEach(btn => {
+    btn.onclick = () => {
+      const idx = parseInt(btn.dataset.idx)
+      treino.selectedIdx = idx
+      treino.answered = true
+      treino.total++
+      if (idx === q.answerIndex) treino.correct++
+      api('/api/user/resposta', { questaoId: q.id, correct: idx === q.answerIndex, subject: treino.subject }).catch(() => {})
+      renderTreino(container)
+    }
+  })
+
+  document.getElementById('treinoProxima')?.addEventListener('click', () => {
+    treino.current++
+    treino.answered = false
+    treino.selectedIdx = -1
+    renderTreino(container)
+  })
+
+  document.getElementById('treinoSair')?.addEventListener('click', () => switchTab('simulados'))
+}
+
 // ===== TAB: SIMULADOS =====
 function renderSimulados(container) {
   if (state.simulado.screen === 'quiz') { renderQuiz(container); return }
@@ -1118,6 +1273,18 @@ function renderSimulados(container) {
         </div>
       </div>
       <div class="simulado-types">
+        <div class="simulado-type-card" data-type="treino" style="border-color:rgba(168,85,247,0.4);background:rgba(168,85,247,0.05)">
+          <div class="simulado-type-info">
+            <h3>🎓 Modo Treino</h3>
+            <p>Questão a questão, resposta imediata, sem timer · 9 matérias</p>
+            <div class="simulado-meta">
+              <span class="meta-chip">Sem timer</span>
+              <span class="meta-chip">9 matérias</span>
+              <span class="meta-chip" style="color:#a855f7">Gratuito</span>
+            </div>
+          </div>
+          <div class="simulado-type-icon">🎓</div>
+        </div>
         <div class="simulado-type-card" data-type="adaptativo" style="border-color:rgba(16,185,129,0.4);background:rgba(16,185,129,0.05)">
           <div class="simulado-type-info">
             <h3>🎯 Adaptativo</h3>
@@ -1318,7 +1485,8 @@ function renderSimulados(container) {
   container.querySelectorAll('[data-type]').forEach(card => {
     card.onclick = () => {
       const type = card.dataset.type
-      if (type !== 'mini' && type !== 'adaptativo' && !isPro()) { renderUpgradeModal(); return }
+      if (type === 'treino') { treino.questions = []; renderTab('treino'); return }
+      if (type !== 'mini' && type !== 'adaptativo' && !isPro()) { renderUpgradeModal('simulado'); return }
       const isIaType = type === 'ia' || type.endsWith('_ia')
       if (isIaType) {
         const content = document.getElementById('appContent')
@@ -1338,7 +1506,7 @@ function renderSimulados(container) {
   })
 
   if (document.getElementById('simUpgrade')) {
-    document.getElementById('simUpgrade').onclick = () => renderUpgradeModal()
+    document.getElementById('simUpgrade').onclick = () => renderUpgradeModal('simulado')
   }
 
   container.querySelectorAll('.simulado-ano-card').forEach(card => {
@@ -2484,7 +2652,7 @@ function renderPlanoGerar(container) {
       <button class="btn btn-ghost btn-full" id="planoBack" style="margin-top:0.5rem">Voltar</button>
     </div>
   `
-  document.getElementById('gerarPlanoBtn').onclick = () => pro ? gerarPlano(container) : renderUpgradeModal()
+  document.getElementById('gerarPlanoBtn').onclick = () => pro ? gerarPlano(container) : renderUpgradeModal('plano')
   document.getElementById('planoBack').onclick = () => switchTab('mais')
 }
 
@@ -2626,14 +2794,37 @@ function renderRedacao(container) {
       ${(() => {
         const hist = loadRedacaoHistory()
         if (!hist.length) return ''
+        // Bar chart of last 10 notas
+        const chartData = hist.slice(0, 10).reverse()
+        const maxNota = 1000
+        const bars = chartData.map(h => {
+          const pct = Math.round((h.nota / maxNota) * 100)
+          const color = h.nota >= 700 ? '#10b981' : h.nota >= 500 ? '#f59e0b' : '#ef4444'
+          const d = new Date(h.date)
+          const label = d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+          return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1">
+            <div style="font-size:0.65rem;font-weight:700;color:${color}">${h.nota}</div>
+            <div style="width:100%;background:var(--surface2);border-radius:4px;overflow:hidden;height:60px;display:flex;align-items:flex-end">
+              <div style="width:100%;height:${pct}%;background:${color};border-radius:4px 4px 0 0;transition:height 0.3s"></div>
+            </div>
+            <div style="font-size:0.6rem;color:var(--text3);text-align:center">${label}</div>
+          </div>`
+        }).join('')
         const items = hist.slice(0, 3).map(h => {
           const color = h.nota >= 700 ? '#10b981' : h.nota >= 500 ? '#f59e0b' : '#ef4444'
           const d = new Date(h.date)
           const dateStr = d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
-          const temaShort = h.tema.length > 30 ? h.tema.slice(0, 30) + '…' : h.tema
+          const temaShort = h.tema ? (h.tema.length > 30 ? h.tema.slice(0, 30) + '…' : h.tema) : '—'
           return `<div class="history-item"><div class="history-info"><span class="history-type">${temaShort}</span><span class="history-date">${dateStr}</span></div><span class="history-pct" style="color:${color}">${h.nota}</span></div>`
         }).join('')
-        return `<div class="mais-section-title" style="margin-top:1.25rem;margin-bottom:0.5rem">Correções anteriores</div><div class="history-list">${items}</div>`
+        return `
+        <div class="mais-section-title" style="margin-top:1.25rem;margin-bottom:0.5rem">Evolução das notas</div>
+        <div class="card" style="margin-bottom:0.75rem">
+          <div style="display:flex;gap:4px;align-items:flex-end;padding:0.25rem 0">${bars}</div>
+          <div style="text-align:center;font-size:0.7rem;color:var(--text3);margin-top:0.25rem">Últimas ${chartData.length} redação${chartData.length > 1 ? 'ões' : ''}</div>
+        </div>
+        <div class="mais-section-title" style="margin-bottom:0.5rem">Correções anteriores</div>
+        <div class="history-list">${items}</div>`
       })()}
     </div>
   `
@@ -2918,7 +3109,7 @@ function renderFlashcardsNew(container) {
   document.getElementById('fcBack').onclick = () => { state.flashcards.screen = 'menu'; renderFlashcards(container) }
 
   document.getElementById('fcAiGen').onclick = async () => {
-    if (!isPro()) { renderUpgradeModal(); return }
+    if (!isPro()) { renderUpgradeModal('flashcard'); return }
     const subject = document.getElementById('fcSubject').value
     const topic = document.getElementById('fcAiTopic').value.trim()
     const btn = document.getElementById('fcAiGen')
@@ -3111,7 +3302,7 @@ async function renderPerfilPublico(userId) {
 }
 
 // ===== UPGRADE MODAL =====
-function renderUpgradeModal() {
+function renderUpgradeModal(context = '') {
   const existing = document.querySelector('.modal-overlay')
   if (existing) existing.remove()
 
@@ -3119,6 +3310,18 @@ function renderUpgradeModal() {
     { id: 'monthly', name: 'Pro Mensal', price: 'R$29', period: '/mês', desc: '7 dias grátis para começar', badge: null },
     { id: 'annual', name: 'Pro Anual', price: 'R$199', period: '/ano', desc: 'Equivale a R$16,58/mês · Economize 43%', badge: 'MELHOR PREÇO' },
   ]
+
+  const contextMsgs = {
+    tutor: 'Você atingiu o limite diário do tutor. Assine Pro para perguntas ilimitadas.',
+    redacao: 'Você atingiu o limite diário de redação. Assine Pro para correções ilimitadas.',
+    simulado: 'Simulados completos são exclusivos do Pro. Faça upgrade e estude sem limites.',
+    plano: 'Plano de estudo personalizado é exclusivo do Pro.',
+    flashcard: 'Flashcards IA são exclusivos do Pro.',
+    default: 'Tutor ilimitado, simulados completos, plano de estudo e muito mais.'
+  }
+  const subtitle = contextMsgs[context] || contextMsgs.default
+
+  const canStartTrial = !state.trialUsed && state.plan === 'free'
 
   let selected = 'annual'
 
@@ -3139,7 +3342,14 @@ function renderUpgradeModal() {
     <div class="modal-sheet">
       <div class="modal-handle"></div>
       <div class="modal-title">Tudo ilimitado no Pro</div>
-      <p class="modal-sub">Tutor ilimitado, simulados completos, plano de estudo e muito mais</p>
+      <p class="modal-sub">${subtitle}</p>
+      ${canStartTrial ? `
+      <div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:12px;padding:1rem;margin-bottom:1rem;text-align:center">
+        <div style="font-size:0.8rem;color:#10b981;font-weight:700;margin-bottom:0.25rem">SEM CARTÃO DE CRÉDITO</div>
+        <button class="btn btn-full" id="trialFreeBtn" style="background:#10b981;color:#fff;font-weight:700;border:none;padding:0.85rem;border-radius:10px;font-size:1rem;cursor:pointer">🎁 Experimentar Pro por 3 dias grátis</button>
+        <div style="font-size:0.75rem;color:#9ca3af;margin-top:0.5rem">Sem cartão · Ativa agora · Cancela sozinho</div>
+      </div>
+      <div style="text-align:center;font-size:0.8rem;color:var(--text2);margin-bottom:0.75rem">— ou assine —</div>` : ''}
       <div class="plans-list" id="plansList">${planCards}</div>
       <div class="upgrade-cta">
         <button class="btn btn-primary btn-full" id="upgradeBtn">Começar 7 dias grátis</button>
@@ -3175,6 +3385,24 @@ function renderUpgradeModal() {
       btn.textContent = 'Começar 7 dias grátis'
     }
   }
+
+  document.getElementById('trialFreeBtn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('trialFreeBtn')
+    btn.disabled = true; btn.textContent = 'Ativando...'
+    try {
+      const data = await api('/api/trial/start', {})
+      state.plan = 'trialing'
+      state.trialEnd = data.trialEnd
+      state.trialUsed = true
+      localStorage.setItem('decifra_plan', 'trialing')
+      overlay.remove()
+      toast('Pro ativado! 3 dias para explorar tudo. 🎉', 'success')
+      renderApp()
+    } catch (err) {
+      toast(err.message || 'Erro ao ativar trial.', 'error')
+      btn.disabled = false; btn.textContent = '🎁 Experimentar Pro por 3 dias grátis'
+    }
+  })
 }
 
 // ===== PWA INSTALL BANNER =====
@@ -3426,6 +3654,127 @@ async function showReferralModal() {
   } catch {
     document.getElementById('refContent').innerHTML = `<p style="color:var(--text2)">Erro ao carregar código. Tente novamente.</p>`
   }
+}
+
+// ===== POMODORO =====
+const pomodoro = { active: false, paused: false, minutes: 25, seconds: 0, mode: 'work', cycles: 0, timer: null }
+
+function startPomodoro(workMin = 25) {
+  if (pomodoro.timer) clearInterval(pomodoro.timer)
+  pomodoro.active = true
+  pomodoro.paused = false
+  pomodoro.mode = 'work'
+  pomodoro.minutes = workMin
+  pomodoro.seconds = 0
+  pomodoro.timer = setInterval(tickPomodoro, 1000)
+  updatePomodoroUI()
+}
+
+function tickPomodoro() {
+  if (pomodoro.paused) return
+  if (pomodoro.seconds > 0) { pomodoro.seconds--; updatePomodoroUI(); return }
+  if (pomodoro.minutes > 0) { pomodoro.minutes--; pomodoro.seconds = 59; updatePomodoroUI(); return }
+  // Timer ended
+  clearInterval(pomodoro.timer)
+  if (pomodoro.mode === 'work') {
+    pomodoro.cycles++
+    pomodoro.mode = 'break'
+    pomodoro.minutes = pomodoro.cycles % 4 === 0 ? 15 : 5
+    pomodoro.seconds = 0
+    toast(`Pausa de ${pomodoro.minutes} min! Você merece. ☕`, 'success')
+  } else {
+    pomodoro.mode = 'work'
+    pomodoro.minutes = 25
+    pomodoro.seconds = 0
+    toast('Hora de focar! 25 min de estudo. 📚', '')
+  }
+  pomodoro.timer = setInterval(tickPomodoro, 1000)
+  updatePomodoroUI()
+}
+
+function stopPomodoro() {
+  if (pomodoro.timer) clearInterval(pomodoro.timer)
+  pomodoro.active = false; pomodoro.paused = false
+  updatePomodoroUI()
+}
+
+function updatePomodoroUI() {
+  const el = document.getElementById('pomodoroFloat')
+  if (!el) return
+  const mm = String(pomodoro.minutes).padStart(2, '0')
+  const ss = String(pomodoro.seconds).padStart(2, '0')
+  const icon = pomodoro.mode === 'work' ? '📚' : '☕'
+  const color = pomodoro.mode === 'work' ? '#3b82f6' : '#10b981'
+  el.innerHTML = `<span style="font-size:0.85rem;font-weight:700;color:${color}">${icon} ${mm}:${ss}</span>`
+  el.style.borderColor = color
+}
+
+function renderPomodoroFloat() {
+  const existing = document.getElementById('pomodoroFloat')
+  if (existing) { updatePomodoroUI(); return }
+  const btn = document.createElement('div')
+  btn.id = 'pomodoroFloat'
+  btn.style.cssText = 'position:fixed;bottom:80px;right:16px;z-index:200;background:var(--surface);border:2px solid #3b82f6;border-radius:24px;padding:8px 14px;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.3);font-size:0.85rem;font-weight:700;color:#3b82f6;display:flex;align-items:center;gap:6px;user-select:none'
+  btn.innerHTML = '⏱ Pomodoro'
+  btn.onclick = showPomodoroModal
+  document.body.appendChild(btn)
+}
+
+function showPomodoroModal() {
+  const existing = document.querySelector('.pomo-modal')
+  if (existing) { existing.remove(); return }
+  const mm = String(pomodoro.minutes).padStart(2, '0')
+  const ss = String(pomodoro.seconds).padStart(2, '0')
+  const modal = document.createElement('div')
+  modal.className = 'pomo-modal'
+  modal.style.cssText = 'position:fixed;bottom:130px;right:16px;z-index:300;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:1.25rem;width:240px;box-shadow:0 8px 24px rgba(0,0,0,0.4)'
+  modal.innerHTML = `
+    <div style="text-align:center;margin-bottom:0.75rem">
+      <div style="font-size:0.75rem;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">${pomodoro.mode === 'work' ? '📚 Estudo' : '☕ Pausa'} · Ciclo ${pomodoro.cycles + 1}</div>
+      <div id="pomoDisplay" style="font-size:2.5rem;font-weight:900;color:${pomodoro.mode === 'work' ? '#3b82f6' : '#10b981'};line-height:1.1">${mm}:${ss}</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.5rem">
+      ${!pomodoro.active ? `
+        <button id="pomo25" style="background:#3b82f6;color:#fff;border:none;border-radius:8px;padding:0.5rem;font-size:0.8rem;font-weight:700;cursor:pointer">25 min</button>
+        <button id="pomo50" style="background:var(--surface2);color:var(--text1);border:1px solid var(--border);border-radius:8px;padding:0.5rem;font-size:0.8rem;font-weight:600;cursor:pointer">50 min</button>
+      ` : `
+        <button id="pomoPause" style="background:${pomodoro.paused ? '#10b981' : '#f59e0b'};color:#fff;border:none;border-radius:8px;padding:0.5rem;font-size:0.8rem;font-weight:700;cursor:pointer">${pomodoro.paused ? '▶ Retomar' : '⏸ Pausar'}</button>
+        <button id="pomoStop" style="background:#ef4444;color:#fff;border:none;border-radius:8px;padding:0.5rem;font-size:0.8rem;font-weight:700;cursor:pointer">✕ Parar</button>
+      `}
+    </div>
+    <div style="font-size:0.7rem;color:var(--text3);text-align:center">Técnica Pomodoro · 25min foco → 5min pausa</div>
+  `
+  document.body.appendChild(modal)
+
+  // Update display every second
+  const displayInterval = setInterval(() => {
+    const d = document.getElementById('pomoDisplay')
+    if (!d) { clearInterval(displayInterval); return }
+    const m = String(pomodoro.minutes).padStart(2, '0')
+    const s = String(pomodoro.seconds).padStart(2, '0')
+    const c = pomodoro.mode === 'work' ? '#3b82f6' : '#10b981'
+    d.textContent = `${m}:${s}`; d.style.color = c
+  }, 500)
+
+  document.getElementById('pomo25')?.addEventListener('click', () => { modal.remove(); startPomodoro(25); renderPomodoroFloat() })
+  document.getElementById('pomo50')?.addEventListener('click', () => { modal.remove(); startPomodoro(50); renderPomodoroFloat() })
+  document.getElementById('pomoPause')?.addEventListener('click', () => {
+    pomodoro.paused = !pomodoro.paused
+    modal.remove(); showPomodoroModal()
+  })
+  document.getElementById('pomoStop')?.addEventListener('click', () => {
+    stopPomodoro(); modal.remove()
+    const f = document.getElementById('pomodoroFloat')
+    if (f) { f.innerHTML = '⏱ Pomodoro'; f.style.borderColor = '#3b82f6'; f.style.color = '#3b82f6' }
+  })
+
+  // Close on outside click
+  setTimeout(() => {
+    document.addEventListener('click', function closeOnce(e) {
+      if (!modal.contains(e.target) && e.target.id !== 'pomodoroFloat') { modal.remove(); clearInterval(displayInterval) }
+      document.removeEventListener('click', closeOnce)
+    })
+  }, 100)
 }
 
 // ===== ADMIN =====
